@@ -142,6 +142,8 @@ impl Status {
     }
 }
 pub type SharedStatus = Arc<Mutex<Status>>;
+/// Level, event, and message. Worker messages may be complete versioned
+/// `REGAIN_DIAGNOSTIC` records; forward those intact to preserve evidence.
 pub type Diagnostic = Arc<dyn Fn(&str, &str, &str) + Send + Sync>;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ControlObservation {

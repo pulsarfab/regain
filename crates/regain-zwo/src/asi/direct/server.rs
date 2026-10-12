@@ -492,6 +492,22 @@ impl Worker {
                 let _ = ready_tx.send(Err(anyhow::anyhow!("camera identity differs")));
                 return;
             }
+            if model == Model::Asi6200
+                && let Some((camera, info, _)) = &device
+                && let Err(mut error) = asi6200::initialize_connection(camera, info)
+            {
+                if let Err(cleanup) =
+                    crate::asi::shutdown_thermal_controls(&model.controls(false), |kind| {
+                        camera.environment_control(kind as u32, Some(0))
+                    })
+                {
+                    error = error.context(format!(
+                        "thermal shutdown after failed initialization: {cleanup:#}"
+                    ));
+                }
+                let _ = ready_tx.send(Err(error));
+                return;
+            }
             let telemetry = device.as_ref().map(|d| d.0.telemetry()).unwrap_or_else(|| {
                 std::sync::Arc::new(std::sync::Mutex::new(Some(
                     transport::TelemetrySample::new([250, 0, 25, 0], Instant::now()),

@@ -10,6 +10,8 @@ See the [sanitized test evidence](asi6200-original-evidence.json) and
 
 See [cancellation cleanup](asi6200-abort-cleanup.md) for the later synchronization
 and clock-gate fix, SDK comparison, and original-camera abort acceptance.
+See [SDK lifecycle and readout parity](asi6200-sdk-parity.md) for the subsequent
+connection setup, queued USB timing, full-frame acceptance and reproduction.
 
 ## Revision detection
 

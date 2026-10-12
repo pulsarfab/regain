@@ -1,7 +1,9 @@
-"""Opt-in ASI6200MM Pro abort/reuse acceptance, with passive private USB tracing.
+"""Opt-in full-frame ASI6200MM Pro abort/reuse acceptance with passive USB tracing.
 
 Run with the existing inspection Python environment (Frida is required). Only
 the worker started here is controlled. The camera must have no other owner.
+Every acquisition, including aborted frames, uses 9576x6388 RAW16 at bin 1.
+Offset baselines and post-abort verification exposures are always 5 seconds.
 No USB reset, SDK loading, process replacement, or external process control is
 performed. Results contain hashes/statistics, never image buffers. USB traces
 contain the selected device's private path and must not be published verbatim.
@@ -25,23 +27,24 @@ from pathlib import Path
 MODEL = "ZWO ASI6200MM Pro"
 WIDTH, HEIGHT = 9576, 6388
 CASES = {
-    "immediate": (15, None, 0, False),
-    "delay-170ms": (15, None, .17, False),
-    "initializing": (15, "initializing", 0, False),
-    "exposing": (15, "exposing", 0, False),
-    "synchronizing": (15, "synchronizing", 0, False),
-    "integrating": (15, "integrating", 0, False),
-    "integrating-620ms": (15, "integrating", .62, False),
-    "integrating-820ms": (15, "integrating", .82, False),
-    "integrating-1020ms": (15, "integrating", 1.02, False),
-    "restoring-clocks": (2, "restoring_clocks", 0, False),
-    "sensor-readout": (2, "sensor_readout", 0, False),
-    "downloading": (2, "downloading", 0, True),
+    "immediate": (15, None, 0),
+    "delay-170ms": (15, None, .17),
+    "initializing": (15, "initializing", 0),
+    "exposing": (15, "exposing", 0),
+    "synchronizing": (15, "synchronizing", 0),
+    "integrating": (15, "integrating", 0),
+    "integrating-620ms": (15, "integrating", .62),
+    "integrating-820ms": (15, "integrating", .82),
+    "integrating-1020ms": (15, "integrating", 1.02),
+    "restoring-clocks": (5, "restoring_clocks", 0),
+    "downloading": (5, "downloading", 0),
 }
+# SDK-style queued normal reads have no separate sensor_readout phase. The
+# downloading case cancels active batch harvesting after clock restoration.
 DEFAULT_CASES = list(CASES)
 # These phases also exist in older release workers, for before/after comparisons.
 for _delay in [.17, .62, .82, 1.02]:
-    CASES[f"exposing-{round(_delay * 1000)}ms"] = (15, "exposing", _delay, False)
+    CASES[f"exposing-{round(_delay * 1000)}ms"] = (15, "exposing", _delay)
 
 
 def require(condition, message):
@@ -288,8 +291,8 @@ def pixel_statistics(pixels, width, height):
                 rowMedianRange=row_range, rowMedianRows=height, rowMedianAlgorithm=algorithm)
 
 
-def exposure(seconds, full=False):
-    return dict(width=WIDTH if full else 128, height=HEIGHT if full else 128,
+def exposure(seconds):
+    return dict(width=WIDTH, height=HEIGHT,
                 x=0, y=0, bin=1, microseconds=round(seconds * 1e6), dark=True, readRetries=0)
 
 
@@ -364,11 +367,12 @@ def main():
     parser.add_argument("--worker", type=Path, required=True, help="exact regain-device.exe to test")
     parser.add_argument("--serial", required=True, help="exact 16-digit serial from read-only enumeration")
     parser.add_argument("--output", type=Path, required=True, help="new directory for private trace and results")
-    parser.add_argument("--repeat", type=int, default=1, help="repeat selected cancellation cases (1..10)")
-    parser.add_argument("--case", choices=list(CASES), action="append", help="select cases; default is all")
+    parser.add_argument("--repeat", type=int, default=1, help="repeat full-frame cancellation cases (1..10)")
+    parser.add_argument("--case", choices=list(CASES), action="append",
+                        help="select full-frame cases; default is the entire current-phase matrix (exposing-delay aliases support older workers)")
     parser.add_argument("--thermal", action="store_true", help="verify enabled cooler/heater survive cancellation, including physical BC19 readbacks")
     parser.add_argument("--skip-freshness-baseline", action="store_true",
-                        help="omit paired full-frame offset baselines for a targeted old/fixed comparison")
+                        help="omit paired 5-second full-frame offset baselines for a targeted old/fixed comparison; verification frames remain full-frame")
     args = parser.parse_args()
     if not args.hardware:
         parser.error("physical acceptance requires explicit --hardware")
@@ -414,22 +418,22 @@ def main():
         results["expectedThermalControls"] = thermal
         thermal_flags = (0 if thermal.get("17") else 0x80) | (0x40 if thermal.get("21") else 0)
         worker.set(5, 50)
-        results["roiBaseline"] = worker.frame(exposure(.1))
+        results["fullFrameBaseline"] = worker.frame(exposure(5))
         baselines = {}
         if not args.skip_freshness_baseline:
-            for offset in [50, 100]:
-                worker.set(5, offset)
-                baselines[offset] = worker.frame(exposure(2, True))
+            baselines[50] = results["fullFrameBaseline"]
+            worker.set(5, 100)
+            baselines[100] = worker.frame(exposure(5))
             results["fullFrameBaselines"] = baselines
             require(baselines[50]["sha256"] != baselines[100]["sha256"], "baseline offset change returned identical frames")
         else:
             results["fullFrameBaselinesSkipped"] = True
         # Device opens used by list/identity are allowed before acceptance starts.
         trace_start = len(worker.trace_events)
-        previous_hash = (baselines[100] if baselines else results["roiBaseline"])["sha256"]
+        previous_hash = (baselines[100] if baselines else results["fullFrameBaseline"])["sha256"]
         for repetition in range(args.repeat):
             for name in args.case or DEFAULT_CASES:
-                seconds, phase, delay, full = CASES[name]
+                seconds, phase, delay = CASES[name]
                 case = dict(name=name, repetition=repetition + 1, passed=False)
                 results["cases"].append(case)
                 offset = 50 if len(results["cases"]) % 2 else 100
@@ -438,7 +442,7 @@ def main():
                 started = time.monotonic()
                 case["startMonotonic"] = started
                 case["abortTraceStart"] = len(worker.trace_events)
-                worker.call("start", exposure(seconds, full))
+                worker.call("start", exposure(seconds))
                 if phase:
                     observed = worker.phase(phase, marker)
                     case["targetPhase"] = observed
@@ -488,7 +492,7 @@ def main():
                 worker.set(5, offset)
                 # The reported failure is in long-mode synchronization. A
                 # short-mode follow-up alone would not exercise that handshake.
-                frame = worker.frame(exposure(2, True))
+                frame = worker.frame(exposure(5))
                 require(frame["metadata"]["offset"] == offset, "follow-up offset metadata mismatch")
                 require(frame["sha256"] != previous_hash, "follow-up reused previous frame pixels")
                 case["freshFrame"] = frame

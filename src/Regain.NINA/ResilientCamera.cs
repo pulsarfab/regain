@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using NINA.Core.Enum;
 using NINA.Core.Model.Equipment;
 using NINA.Core.Utility;
@@ -318,28 +319,66 @@ public sealed class ResilientCamera : BaseINPC, ICamera
     }
     public async Task WaitUntilExposureIsReady(CancellationToken token)
     {
-        await AwaitExposure(token).ConfigureAwait(false);
+        long started = Stopwatch.GetTimestamp();
+        long generation;
+        lock (sync) generation = exposureGeneration;
+        string camera = Name, backend = session?.Backend ?? "unknown", outcome = "failed";
+        Exception? failure = null;
+        try
+        {
+            await AwaitExposure(token).ConfigureAwait(false);
+            outcome = "success";
+        }
+        catch (Exception error) { failure = error; outcome = TimingOutcome(error, token, generation); throw; }
+        finally { CameraLog.ApiTiming(camera, backend, generation, nameof(WaitUntilExposureIsReady), started, outcome, failure); }
     }
     public async Task<IExposureData> DownloadExposure(CancellationToken token)
     {
+        long started = Stopwatch.GetTimestamp();
         long generation;
         lock (sync) generation = exposureGeneration;
-        Frame frame;
-        try { frame = await AwaitExposure(token).ConfigureAwait(false); }
-        finally { lock (sync) { if (generation == exposureGeneration) RestoreNinaTimeout(); } }
-        var metadata = new ImageMetaData();
-        metadata.FromCamera(this);
-        metadata.Image.ExposureStart = frame.StartedUtc;
-        metadata.Image.ExposureTime = frame.Exposure.microseconds / 1e6;
-        metadata.Camera.BinX = metadata.Camera.BinY = frame.Exposure.bin;
-        metadata.Camera.Gain = (int)frame.Controls.GetValueOrDefault(0);
-        metadata.Camera.Offset = (int)frame.Controls.GetValueOrDefault(5);
-        metadata.Camera.BayerOffsetX = frame.Exposure.x % 2;
-        metadata.Camera.BayerOffsetY = frame.Exposure.y % 2;
-        bool bayered = descriptor.Color && !(frame.Controls.GetValueOrDefault(18) != 0 && frame.Exposure.bin > 1);
-        if (!bayered)
-            metadata.Camera.BayerPattern = BayerPatternEnum.None;
-        return images.CreateImageArrayExposureData(frame.Pixels, frame.Width, frame.Height, BitDepth, bayered, metadata);
+        string camera = Name, backend = session?.Backend ?? "unknown", outcome = "failed";
+        Exception? failure = null;
+        Frame? frame = null;
+        try
+        {
+            try { frame = await AwaitExposure(token).ConfigureAwait(false); }
+            finally { lock (sync) { if (generation == exposureGeneration) RestoreNinaTimeout(); } }
+            var metadata = new ImageMetaData();
+            metadata.FromCamera(this);
+            metadata.Image.ExposureStart = frame.StartedUtc;
+            metadata.Image.ExposureTime = frame.Exposure.microseconds / 1e6;
+            metadata.Camera.BinX = metadata.Camera.BinY = frame.Exposure.bin;
+            metadata.Camera.Gain = (int)frame.Controls.GetValueOrDefault(0);
+            metadata.Camera.Offset = (int)frame.Controls.GetValueOrDefault(5);
+            metadata.Camera.BayerOffsetX = frame.Exposure.x % 2;
+            metadata.Camera.BayerOffsetY = frame.Exposure.y % 2;
+            bool bayered = descriptor.Color && !(frame.Controls.GetValueOrDefault(18) != 0 && frame.Exposure.bin > 1);
+            if (!bayered)
+                metadata.Camera.BayerPattern = BayerPatternEnum.None;
+            long factoryStarted = Stopwatch.GetTimestamp();
+            string factoryOutcome = "failed";
+            Exception? factoryFailure = null;
+            try
+            {
+                var image = images.CreateImageArrayExposureData(frame.Pixels, frame.Width, frame.Height, BitDepth, bayered, metadata);
+                factoryOutcome = outcome = "success";
+                return image;
+            }
+            catch (Exception error) { factoryFailure = error; factoryOutcome = TimingOutcome(error, token, generation); throw; }
+            finally { CameraLog.ApiTiming(camera, backend, generation, "CreateImageArrayExposureData", factoryStarted,
+                factoryOutcome, factoryFailure, frame.Width, frame.Height, frame.Pixels.Length); }
+        }
+        catch (Exception error) { failure = error; outcome = TimingOutcome(error, token, generation); throw; }
+        finally { CameraLog.ApiTiming(camera, backend, generation, nameof(DownloadExposure), started,
+            outcome, failure, frame?.Width, frame?.Height, frame?.Pixels.Length); }
+    }
+
+    private string TimingOutcome(Exception error, CancellationToken token, long generation)
+    {
+        if (error is OperationCanceledException || token.IsCancellationRequested) return "cancelled";
+        lock (sync)
+            return generation == exposureGeneration && exposureCancel?.IsCancellationRequested == true ? "aborted" : "failed";
     }
     public void StopExposure() => AbortExposure();
     public void AbortExposure()

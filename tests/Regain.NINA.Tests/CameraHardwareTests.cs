@@ -1,4 +1,7 @@
 using System.Diagnostics;
+using System.Collections.Concurrent;
+using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text.Json;
 using Moq;
 using NINA.Core.Model.Equipment;
@@ -22,6 +25,14 @@ public sealed class CameraHardwareTheoryAttribute : TheoryAttribute
 public sealed class Asi6200HardwareFactAttribute : FactAttribute
 {
     public Asi6200HardwareFactAttribute() {
+        if (Environment.GetEnvironmentVariable("REGAIN_TEST_ASI6200_HARDWARE") != "1")
+            Skip = "Opt in with REGAIN_TEST_ASI6200_HARDWARE=1; requires idle ASI6200MM Pro serial 1b07450d17010900";
+    }
+}
+
+public sealed class Asi6200HardwareTheoryAttribute : TheoryAttribute
+{
+    public Asi6200HardwareTheoryAttribute() {
         if (Environment.GetEnvironmentVariable("REGAIN_TEST_ASI6200_HARDWARE") != "1")
             Skip = "Opt in with REGAIN_TEST_ASI6200_HARDWARE=1; requires idle ASI6200MM Pro serial 1b07450d17010900";
     }
@@ -192,6 +203,9 @@ public class CameraHardwareTests(ITestOutputHelper output)
         const string serial = "1b07450d17010900";
         const string model = "ZWO ASI6200MM Pro";
         string root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+        string workers = Path.GetFullPath(Environment.GetEnvironmentVariable("REGAIN_TEST_HARDWARE_WORKERS")
+            ?? Environment.GetEnvironmentVariable("REGAIN_TEST_WORKERS")
+            ?? Path.Combine(root, "target/release"));
         string settingsFolder = Path.Combine(Path.GetTempPath(), "regain-asi6200-acceptance-" + Guid.NewGuid().ToString("N"));
         string settingsPath = Path.Combine(settingsFolder, "camera.json");
         var store = new CameraSelectionStore(settingsPath);
@@ -203,13 +217,13 @@ public class CameraHardwareTests(ITestOutputHelper output)
         var images = new Mock<IExposureDataFactory>();
         images.Setup(f => f.CreateImageArrayExposureData(It.IsAny<ushort[]>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<bool>(), It.IsAny<ImageMetaData>()))
             .Returns((ushort[] pixels, int width, int height, int bits, bool color, ImageMetaData metadata) => {
-                deliveredPixels = pixels.ToArray();
+                deliveredPixels = pixels;
                 deliveredMetadata = metadata;
                 output.WriteLine($"Image: {width}x{height}, mean {pixels.Average(v => (double)v):F2}, model {metadata.Camera.Name}");
                 return new ImageArrayExposureData(pixels, width, height, bits, color, metadata, Mock.Of<IImageDataFactory>());
             });
         var camera = new ResilientCamera(images.Object, store,
-            () => host = new HostClient(Path.Combine(root, "target/debug/regain-alpaca.exe"), Path.Combine(root, "vendor/zwo/ASICamera2.dll"),
+            () => host = new HostClient(Path.Combine(workers, "regain-alpaca.exe"), Path.Combine(root, "vendor/zwo/ASICamera2.dll"),
                 direct: true, supervised: true, log: output.WriteLine),
             new() { MaxRetries = 0, ReconnectDelaySeconds = 1, CoolingTimeoutSeconds = 60 });
         using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(3));
@@ -228,8 +242,7 @@ public class CameraHardwareTests(ITestOutputHelper output)
             camera.CoolerOn = true;
             Assert.True(camera.HasDewHeater);
             camera.DewHeaterOn = true;
-            camera.EnableSubSample = true;
-            camera.SubSampleWidth = camera.SubSampleHeight = 64;
+            camera.EnableSubSample = false;
             var previous = await FreshImage();
 
             foreach (bool earlyCallerCancellation in new[] { true, false }) {
@@ -292,15 +305,209 @@ public class CameraHardwareTests(ITestOutputHelper output)
             deliveredPixels = null;
             // A short exposure bypasses the long-exposure handshake that failed
             // in the incident. Restart through that handshake every time.
-            camera.StartExposure(Sequence(2));
+            camera.StartExposure(Sequence(5));
             await camera.WaitUntilExposureIsReady(deadline.Token).WaitAsync(TimeSpan.FromSeconds(30));
             Assert.NotNull(await camera.DownloadExposure(deadline.Token));
             Assert.Equal(model, deliveredMetadata!.Camera.Name);
             Assert.NotNull(deliveredPixels);
-            Assert.Equal(64 * 64, deliveredPixels.Length);
+            Assert.Equal(9576 * 6388, deliveredPixels.Length);
             Assert.Contains(deliveredPixels, pixel => pixel != 0);
+            images.Invocations.Clear();
             return deliveredPixels;
         }
     }
+    [Asi6200HardwareTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Asi6200FullFrameRepeatThroughNina(bool direct)
+    {
+        const string serial = "1b07450d17010900";
+        const string model = "ZWO ASI6200MM Pro";
+        const int width = 9576, height = 6388;
+        string root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+        string workers = Path.GetFullPath(Environment.GetEnvironmentVariable("REGAIN_TEST_HARDWARE_WORKERS")
+            ?? Environment.GetEnvironmentVariable("REGAIN_TEST_WORKERS") ?? Path.Combine(root, "target/release"));
+        string supervisor = Path.Combine(workers, "regain-alpaca.exe");
+        Assert.True(File.Exists(supervisor), $"Build optimized workers or set REGAIN_TEST_HARDWARE_WORKERS: {supervisor}");
+        Assert.True(File.Exists(Path.Combine(workers, "regain-device.exe")), $"Missing raw worker in {workers}");
+        string settingsFolder = Path.Combine(Path.GetTempPath(), "regain-asi6200-repeat-" + Guid.NewGuid().ToString("N"));
+        string settingsPath = Path.Combine(settingsFolder, "camera.json");
+        var store = new CameraSelectionStore(settingsPath);
+        // Pin identity before USB is opened. No fallback factory is supplied:
+        // all three full frames must use the selected backend and connection.
+        store.Save(new(new(model, width, height, false, 0, 3.76, 16, true, false, [1, 2, 3, 4]), serial, UseDirectDriver: direct));
+        HostClient? host = null;
+        int hostStarts = 0, deliveries = 0;
+        var records = new ConcurrentQueue<string>();
+        void Log(string line) {
+            records.Enqueue(line);
+            // Exercise the same structured parser and INFO routing as the
+            // installed plugin, rather than accepting raw stderr alone.
+            CameraLog.Forward(CameraLog.Parse(direct ? "direct" : "sdk", line), output.WriteLine, output.WriteLine, output.WriteLine);
+        }
+        HardwareFrameSummary? delivered = null, previous = null;
+        var images = new Mock<IExposureDataFactory>();
+        images.Setup(f => f.CreateImageArrayExposureData(It.IsAny<ushort[]>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<bool>(), It.IsAny<ImageMetaData>()))
+            .Returns((ushort[] pixels, int w, int h, int bits, bool color, ImageMetaData metadata) => {
+                Assert.Equal(width, w);
+                Assert.Equal(height, h);
+                Assert.Equal(width * height, pixels.Length);
+                Assert.Equal(16, bits);
+                Assert.False(color);
+                Assert.Equal(model, metadata.Camera.Name);
+                Assert.Equal(100, metadata.Camera.Gain);
+                Assert.Equal(50, metadata.Camera.Offset);
+                Assert.Equal(1, metadata.Camera.BinX);
+                Assert.Equal(1, metadata.Camera.BinY);
+                Assert.Equal(5, metadata.Image.ExposureTime);
+                Assert.NotEqual(DateTime.MinValue, metadata.Image.ExposureStart);
+                delivered = SummarizeHardwareFrame(pixels, w, h);
+                deliveries++;
+                return new ImageArrayExposureData(pixels, w, h, bits, color, metadata, Mock.Of<IImageDataFactory>());
+            });
+        var camera = new ResilientCamera(images.Object, store,
+            () => {
+                hostStarts++;
+                return host = new HostClient(supervisor, Path.Combine(root, "vendor/zwo/ASICamera2.dll"),
+                    direct: direct, supervised: true, log: Log);
+            },
+            new() {
+                MaxRetries = 0, DirectReadRetries = 0, ReadyFrameDownloadRetries = 0,
+                UsbResetAfterFailures = 0, ReconnectDelaySeconds = 1,
+                ExposureGraceSeconds = 20, DownloadTimeoutSeconds = 20, CoolingTimeoutSeconds = 30
+            });
+        using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        try {
+            Assert.True(await camera.Connect(deadline.Token));
+            var initial = await Diagnostics();
+            Assert.Equal(serial, initial.GetProperty("serial").GetString());
+            Assert.Equal(direct ? "direct" : "sdk", initial.GetProperty("backend").GetString());
+            Assert.False(initial.GetProperty("sdkFallback").GetBoolean());
+            int supervisorPid = host!.ProcessId;
+            int workerPid = initial.GetProperty("processId").GetInt32();
+            output.WriteLine($"Full-frame NINA repeat: {(direct ? "direct" : "sdk")}, {model}, serial {serial}, workers {workers}; supervisor {supervisorPid}, raw worker {workerPid}");
+            await Task.Delay(2500, deadline.Token);
+            double baseline = (await host.CallAsync("get", new { control = 8 }, TimeSpan.FromSeconds(10), deadline.Token)).Result.GetInt64() / 10.0;
+            int target = Math.Clamp((int)Math.Ceiling(baseline) - 2, -20, 25);
+            camera.TemperatureSetPoint = target;
+            camera.CoolerOn = true;
+            Assert.True(camera.HasDewHeater);
+            camera.DewHeaterOn = true;
+            camera.EnableSubSample = false;
+            output.WriteLine($"Thermal baseline {baseline:F1} C, mild target {target} C, cooler and heater enabled");
+
+            for (int frame = 1; frame <= 3; frame++) {
+                delivered = null;
+                var clock = Stopwatch.StartNew();
+                camera.StartExposure(new CaptureSequence {
+                    ExposureTime = 5, Gain = 100, Offset = 50, Binning = new BinningMode(1, 1)
+                });
+                double startMs = clock.Elapsed.TotalMilliseconds;
+                await camera.WaitUntilExposureIsReady(deadline.Token).WaitAsync(TimeSpan.FromSeconds(40), deadline.Token);
+                double readyMs = clock.Elapsed.TotalMilliseconds;
+                var download = Stopwatch.StartNew();
+                var image = Assert.IsType<ImageArrayExposureData>(await camera.DownloadExposure(deadline.Token)
+                    .WaitAsync(TimeSpan.FromSeconds(20), deadline.Token));
+                double downloadMs = download.Elapsed.TotalMilliseconds;
+                Assert.Equal(width, image.Width);
+                Assert.Equal(height, image.Height);
+                Assert.Equal(16, image.BitDepth);
+                Assert.False(image.IsBayered);
+                Assert.Equal(frame, deliveries);
+                Assert.NotNull(delivered);
+                Assert.True(delivered.Mean > 0, "The full frame contains no nonzero pixels");
+                if (previous is not null) {
+                    Assert.NotEqual(previous.Hash, delivered.Hash);
+                    int changedRows = delivered.RowHashes.Zip(previous.RowHashes, (a, b) => a != b).Count(changed => changed);
+                    double rowDeltaRms = Math.Sqrt(delivered.RowMeans.Zip(previous.RowMeans, (a, b) => (a - b) * (a - b)).Average());
+                    output.WriteLine($"Frame {frame} vs {frame - 1}, offset50 pair: {changedRows}/{height} rows changed; row-mean delta RMS {rowDeltaRms:F3} ADU");
+                    Assert.Equal(height, changedRows);
+                }
+                double evenMean = delivered.RowMeans.Where((_, row) => row % 2 == 0).Average();
+                double oddMean = delivered.RowMeans.Where((_, row) => row % 2 != 0).Average();
+                double maxRowStep = delivered.RowMeans.Skip(1).Zip(delivered.RowMeans, (a, b) => Math.Abs(a - b)).Max();
+                string bands = string.Join(", ", Enumerable.Range(0, 8).Select(band =>
+                    delivered.RowMeans.Skip(band * height / 8).Take((band + 1) * height / 8 - band * height / 8).Average().ToString("F2")));
+                output.WriteLine($"Frame {frame}: StartExposure {startMs:F1} ms; ready {readyMs:F1} ms from start; DownloadExposure {downloadMs:F1} ms including factory/hash/statistics; total {clock.Elapsed.TotalMilliseconds:F1} ms; {width}x{height} RAW16, {width * height} pixels; SHA256 {delivered.Hash}");
+                output.WriteLine($"Frame {frame}: mean {delivered.Mean:F2}, row means {delivered.RowMeans.Min():F2}..{delivered.RowMeans.Max():F2}, even-minus-odd {evenMean - oddMean:F3}, largest adjacent row step {maxRowStep:F3}; eight row-band means [{bands}]");
+                previous = delivered; // Retain small summaries, never a second full-frame pixel copy.
+                images.Invocations.Clear(); // Moq otherwise retains every 122 MB array argument.
+                var state = await Diagnostics();
+                Assert.Equal(1, hostStarts);
+                Assert.Equal(supervisorPid, host.ProcessId);
+                Assert.Equal(workerPid, state.GetProperty("processId").GetInt32());
+                Assert.Equal(direct ? "direct" : "sdk", state.GetProperty("backend").GetString());
+                Assert.False(state.GetProperty("sdkFallback").GetBoolean());
+                Assert.True(state.GetProperty("controlConnectionAvailable").GetBoolean());
+                Assert.Equal(0, state.GetProperty("retry").GetProperty("recaptures").GetInt32());
+                Assert.Equal(0, state.GetProperty("retry").GetProperty("usbReads").GetInt32());
+                Assert.Equal(0, state.GetProperty("retry").GetProperty("downloads").GetInt32());
+                Assert.Equal(target, state.GetProperty("values").GetProperty("16").GetInt32());
+                Assert.Equal(1, state.GetProperty("values").GetProperty("17").GetInt32());
+                Assert.Equal(1, state.GetProperty("values").GetProperty("21").GetInt32());
+            }
+        }
+        finally {
+            try {
+                if (camera.Connected) {
+                    try {
+                        camera.AbortExposure();
+                        if (camera.HasDewHeater) camera.DewHeaterOn = false;
+                    }
+                    finally { camera.CoolerOn = false; }
+                }
+            }
+            finally {
+                camera.Disconnect();
+                images.Invocations.Clear();
+                if (File.Exists(settingsPath)) File.Delete(settingsPath);
+                if (Directory.Exists(settingsFolder)) Directory.Delete(settingsFolder);
+            }
+        }
+        var structured = records.Where(line => line.StartsWith("REGAIN_DIAGNOSTIC ", StringComparison.Ordinal))
+            .Select(line => {
+                using var document = JsonDocument.Parse(line["REGAIN_DIAGNOSTIC ".Length..]);
+                return document.RootElement.Clone();
+            }).ToArray();
+        Assert.Contains(structured, record => record.GetProperty("event").GetString() == "ipc.command.complete"
+            && record.GetProperty("method").GetString() == "download"
+            && record.GetProperty("details").GetProperty("binaryBytes").GetInt32() == width * height * 2);
+        Assert.DoesNotContain(structured, record => record.GetProperty("event").GetString() == "usb.log_dropped");
+        Assert.Contains(structured, record => record.GetProperty("event").GetString() == "usb.submit"
+            && record.GetProperty("details").TryGetProperty("requestedBytes", out var requested) && requested.GetInt64() > 0);
+        Assert.Contains(structured, record => record.GetProperty("event").GetString() == "usb.complete"
+            && record.GetProperty("details").GetProperty("elapsedUs").GetDouble() >= 0);
+        if (!direct) {
+            Assert.Contains(structured, record => record.GetProperty("event").GetString() == "sdk.usb.instrumentation"
+                && record.GetProperty("details").GetProperty("available").GetBoolean());
+            Assert.Contains(structured, record => record.GetProperty("event").GetString() == "sdk.api.complete"
+                && record.GetProperty("details").GetProperty("api").GetString() == "ASIGetDataAfterExp");
+        }
+        async Task<JsonElement> Diagnostics() => (await host!.CallAsync("diagnostics", null, TimeSpan.FromSeconds(10), deadline.Token)).Result;
+    }
+
+    private sealed record HardwareFrameSummary(string Hash, double Mean, double[] RowMeans, ulong[] RowHashes);
+
+    private static HardwareFrameSummary SummarizeHardwareFrame(ushort[] pixels, int width, int height)
+    {
+        string hash = Convert.ToHexString(SHA256.HashData(MemoryMarshal.AsBytes(pixels.AsSpan()))).ToLowerInvariant();
+        var means = new double[height];
+        var rowHashes = new ulong[height];
+        long total = 0;
+        for (int row = 0; row < height; row++) {
+            long sum = 0;
+            ulong rowHash = 14695981039346656037;
+            for (int column = 0; column < width; column++) {
+                ushort value = pixels[row * width + column];
+                sum += value;
+                rowHash = unchecked((rowHash ^ value) * 1099511628211);
+            }
+            means[row] = (double)sum / width;
+            rowHashes[row] = rowHash;
+            total += sum;
+        }
+        return new(hash, (double)total / pixels.Length, means, rowHashes);
+    }
+
     private static CaptureSequence Sequence(double seconds) => new() { ExposureTime = seconds, Binning = new BinningMode(1, 1) };
 }

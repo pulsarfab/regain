@@ -56,7 +56,7 @@ impl Session {
                     if event == "transfer.retry" {
                         state.retry.usb_reads = state.retry.usb_reads.saturating_add(1);
                     }
-                    state.retry.last_failure = Some(message.into());
+                    state.retry.last_failure = Some(crate::worker::diagnostic_message(message));
                 }
             }
             log(level, event, message);
@@ -1418,9 +1418,14 @@ impl CoolingHold {
         sample: f64,
         elapsed: f64,
     ) -> bool {
+        // The caller checks that cooling is enabled before observing a hold.
+        // Zero demand is legitimate at/below the restored setpoint; requiring
+        // positive power here resets the hold on every idle regulator sample.
         let valid = temperature
             .is_some_and(|t| t.is_finite() && (t - target).abs() <= tolerance.min(1.))
-            && power.is_some_and(|p| p > 0);
+            && power.is_some_and(|p| {
+                (0..=100).contains(&p) && (p > 0 || temperature.is_some_and(|t| t <= target))
+            });
         if !valid {
             self.since = None;
             self.last = None;
@@ -2106,7 +2111,16 @@ mod tests {
             if direct {
                 sel.name = "ZWO ASI585MM Pro".into();
             }
-            let mut session = Session::new(sel, runtime(), log()).unwrap();
+            let events = Arc::new(Mutex::new(Vec::new()));
+            let recorded = events.clone();
+            let mut session = Session::new(
+                sel,
+                runtime(),
+                Arc::new(move |_, event, _| {
+                    recorded.lock().unwrap().push(event.to_string());
+                }),
+            )
+            .unwrap();
             session.connect(&token).await.unwrap();
             let handle = session.cooling();
             let shared = session.status.clone();
@@ -2148,6 +2162,13 @@ mod tests {
             assert_eq!(frame.metadata["controls"]["17"], 0);
             assert_eq!(frame.metadata["recoveries"], 0);
             assert!(!handle.pending());
+            assert!(
+                !events
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|event| event == "cooling.recovered")
+            );
             session.close().await;
         }
     }
@@ -2319,6 +2340,95 @@ mod tests {
         assert!(!hold.observe(Some(-9.7), Some(20), -10., 2., 2., 32.));
         assert!(!hold.observe(Some(-10.), Some(20), -10., 2., 2., 100.));
         assert!(!hold.observe(Some(-10.), Some(0), -10., 2., 2., 102.));
+    }
+    #[test]
+    fn cooling_setpoint_hold_accepts_recorded_zero_to_four_percent_duty_cycle() {
+        let mut hold = CoolingHold::default();
+        // Replay the reported temperatures/duty cycle at a restored 30 C
+        // setpoint: zero demand must not discard sustained regulation.
+        let samples = [
+            (29.8, 4),
+            (29.6, 3),
+            (29.6, 3),
+            (29.5, 2),
+            (29.4, 1),
+            (29.3, 0),
+            (29.3, 0),
+            (29.5, 1),
+            (29.5, 1),
+            (29.5, 1),
+            (29.5, 1),
+            (29.4, 0),
+            (29.5, 0),
+            (29.5, 1),
+            (29.6, 2),
+            (29.5, 1),
+            (29.5, 0),
+            (29.5, 0),
+        ];
+        for (index, (temperature, power)) in samples.into_iter().enumerate() {
+            assert_eq!(
+                hold.observe(
+                    Some(temperature),
+                    Some(power),
+                    30.,
+                    2.,
+                    2.,
+                    index as f64 * 2.
+                ),
+                index >= 15,
+                "sample {index}"
+            );
+        }
+    }
+    #[test]
+    fn cooling_zero_power_hold_requires_the_restored_target_and_full_duration() {
+        for (temperature, target) in [(29.5, -5.), (-6.1, -5.), (-4.9, -5.)] {
+            let mut hold = CoolingHold::default();
+            for index in 0..=20 {
+                assert!(!hold.observe(
+                    Some(temperature),
+                    Some(0),
+                    target,
+                    2.,
+                    2.,
+                    index as f64 * 2.
+                ));
+            }
+        }
+        let mut hold = CoolingHold::default();
+        for index in 0..=15 {
+            assert_eq!(
+                hold.observe(Some(-5.), Some(0), -5., 2., 2., index as f64 * 2.),
+                index == 15
+            );
+        }
+    }
+    #[test]
+    fn cooling_setpoint_hold_resets_on_unavailable_or_invalid_telemetry() {
+        for (temperature, power) in [
+            (None, Some(0)),
+            (Some(-5.), None),
+            (Some(f64::NAN), Some(0)),
+            (Some(f64::INFINITY), Some(0)),
+            (Some(-5.), Some(-1)),
+            (Some(-5.), Some(101)),
+        ] {
+            let mut hold = CoolingHold::default();
+            for index in 0..=15 {
+                assert_eq!(
+                    hold.observe(Some(-5.), Some(0), -5., 2., 2., index as f64 * 2.),
+                    index == 15
+                );
+            }
+            assert!(!hold.observe(temperature, power, -5., 2., 2., 32.));
+            for index in 0..=15 {
+                assert_eq!(
+                    hold.observe(Some(-5.), Some(0), -5., 2., 2., 34. + index as f64 * 2.),
+                    index == 15
+                );
+            }
+        }
     }
     #[tokio::test]
     async fn direct_worker_acknowledges_capture_cooling_over_production_framing() {

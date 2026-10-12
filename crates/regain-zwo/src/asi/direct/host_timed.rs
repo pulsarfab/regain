@@ -32,6 +32,9 @@ pub(super) struct Protocol {
     model: &'static str,
     // Sensor register, not FPGA BD19 despite the similar hexadecimal address.
     standby_register: u16,
+    // SDK delay after queuing the first USB reads and before the first sync
+    // pulse. Verified for the 6200 worker; keep other models independent.
+    initial_sync_settle_ms: u64,
     // Distinct SDK constants for >1000 ms and the 1000 ms branch after
     // truncating exposure to whole milliseconds. They shorten the host wait
     // before restoration; they do not alter programmed sensor timing.
@@ -44,6 +47,7 @@ pub(super) struct Protocol {
 pub(super) const ASI6200: Protocol = Protocol {
     model: "ASI6200",
     standby_register: 0x19e,
+    initial_sync_settle_ms: 15,
     integration_compensation_ms: 200,
     one_second_compensation_ms: 200,
 };
@@ -52,6 +56,7 @@ pub(super) const ASI6200: Protocol = Protocol {
 pub(super) const ASI2600: Protocol = Protocol {
     model: "ASI2600",
     standby_register: 0x1ee,
+    initial_sync_settle_ms: 0,
     integration_compensation_ms: 400,
     one_second_compensation_ms: 205,
 };
@@ -144,6 +149,13 @@ pub(super) fn expose(io: &impl Io, protocol: Protocol, microseconds: u32) -> Res
     io.phase("synchronizing");
     let mut stage = "synchronizing";
     let result = (|| {
+        // The ASI6200 SDK queues its first USB batch before Sleep(15), then
+        // begins the bounded pulse loop (RVA 1ed2cc..1ed401). Do not service
+        // cancellation here: preserve the complete pulse before its existing
+        // integration checkpoint, followed by unconditional clock restoration.
+        if protocol.initial_sync_settle_ms > 0 {
+            io.sleep(Duration::from_millis(protocol.initial_sync_settle_ms));
+        }
         let mut synchronized = false;
         for _ in 0..5 {
             // SDK bounded handshake: set BD00 bit 4, hold 5 ms, clear it,
@@ -247,6 +259,13 @@ mod tests {
     use crate::asi::direct::completion::CaptureCancelled;
     use std::cell::{Cell, RefCell};
 
+    #[derive(Debug, PartialEq)]
+    enum Operation {
+        Read(u16),
+        Write(u8, u16, u8),
+        Sleep(Duration),
+    }
+
     struct Registers {
         fpga: RefCell<[u8; 0x24]>,
         standby: Cell<u8>,
@@ -259,6 +278,7 @@ mod tests {
         fail_write: Cell<Option<(u8, u16, u8)>>,
         writes: RefCell<Vec<(u8, u16, u8)>>,
         phases: RefCell<Vec<&'static str>>,
+        operations: RefCell<Vec<Operation>>,
     }
     impl Default for Registers {
         fn default() -> Self {
@@ -279,6 +299,7 @@ mod tests {
                 fail_write: Cell::new(None),
                 writes: RefCell::default(),
                 phases: RefCell::default(),
+                operations: RefCell::default(),
             }
         }
     }
@@ -292,9 +313,13 @@ mod tests {
     }
     impl Io for Registers {
         fn read(&self, register: u16) -> Result<u8> {
+            self.operations.borrow_mut().push(Operation::Read(register));
             Ok(self.fpga.borrow()[usize::from(register)])
         }
         fn write(&self, request: u8, register: u16, value: u8) -> Result<()> {
+            self.operations
+                .borrow_mut()
+                .push(Operation::Write(request, register, value));
             self.writes.borrow_mut().push((request, register, value));
             if self.fail_write.get() == Some((request, register, value)) {
                 self.fail_write.set(None);
@@ -340,6 +365,9 @@ mod tests {
             self.origin + self.elapsed.get()
         }
         fn sleep(&self, duration: Duration) {
+            self.operations
+                .borrow_mut()
+                .push(Operation::Sleep(duration));
             self.elapsed.set(self.elapsed.get() + duration);
         }
         fn phase(&self, phase: &'static str) {
@@ -351,18 +379,45 @@ mod tests {
     fn cancellation_at_sync_and_every_clock_gate_allows_another_exposure() {
         // Arrive before/during either sync edge, before standby, after each
         // gate, and late in integration. Fake time avoids sleeps in tests.
-        for millis in [0, 2, 24, 25, 625, 825, 1025, 1525] {
+        for millis in [0, 2, 14, 15, 17, 39, 40, 640, 840, 1040, 1540] {
             let io = Registers::default();
             io.cancel_at.set(Some(Duration::from_millis(millis)));
             let error = expose(&io, ASI6200, 2_000_000).unwrap_err();
             assert!(error.is::<CaptureCancelled>(), "{millis}: {error:#}");
             io.assert_clocks_restored();
+            assert_eq!(
+                &io.writes.borrow()[..2],
+                &[(0xbd, 0, 0xd0), (0xbd, 0, 0xc0)]
+            );
             assert!(io.elapsed.get() < Duration::from_secs(2));
             io.cancel_at.set(None);
             io.fpga.borrow_mut()[0x23] = 1;
             expose(&io, ASI6200, 2_000_000).unwrap();
             io.assert_clocks_restored();
         }
+    }
+
+    #[test]
+    fn asi6200_queued_pipe_settles_before_first_complete_sync_pulse() {
+        use Operation::*;
+        let io = Registers::default();
+        expose(&io, ASI6200, 1_000_000).unwrap();
+        assert_eq!(
+            &io.operations.borrow()[..8],
+            &[
+                Sleep(Duration::from_millis(15)),
+                Read(0),
+                Write(0xbd, 0, 0xd0),
+                Sleep(Duration::from_millis(5)),
+                Read(0),
+                Write(0xbd, 0, 0xc0),
+                Sleep(Duration::from_millis(20)),
+                Read(0x23),
+            ]
+        );
+        let io = Registers::default();
+        expose(&io, ASI2600, 1_000_000).unwrap();
+        assert_eq!(io.operations.borrow()[0], Read(0));
     }
 
     #[test]
@@ -396,7 +451,7 @@ mod tests {
     #[test]
     fn cancellation_arriving_during_restoration_cannot_interrupt_it() {
         let io = Registers::default();
-        io.cancel_at.set(Some(Duration::from_millis(2000)));
+        io.cancel_at.set(Some(Duration::from_millis(2015)));
         expose(&io, ASI6200, 2_000_000).unwrap();
         io.assert_clocks_restored();
         // The acquisition caller observes the pending cancellation at its
@@ -407,7 +462,7 @@ mod tests {
     #[test]
     fn environment_error_also_restores_clocks_without_masking_error() {
         let io = Registers {
-            fail_service_at: Some(Duration::from_millis(825)),
+            fail_service_at: Some(Duration::from_millis(840)),
             ..Registers::default()
         };
         assert_eq!(
@@ -422,7 +477,7 @@ mod tests {
         for thermal_flags in [0, 0x40, 0x80, 0xc0] {
             let io = Registers::default();
             io.fpga.borrow_mut()[0x19] = thermal_flags;
-            io.cancel_at.set(Some(Duration::from_millis(1025)));
+            io.cancel_at.set(Some(Duration::from_millis(1040)));
             assert!(
                 expose(&io, ASI6200, 2_000_000)
                     .unwrap_err()
@@ -457,7 +512,7 @@ mod tests {
                 .is::<CaptureCancelled>()
         );
         io.assert_clocks_restored();
-        assert_eq!(io.elapsed.get(), Duration::from_millis(225));
+        assert_eq!(io.elapsed.get(), Duration::from_millis(240));
     }
 
     #[test]
@@ -479,7 +534,7 @@ mod tests {
             ignore_gate_clear: true,
             ..Registers::default()
         };
-        io.cancel_at.set(Some(Duration::from_millis(825)));
+        io.cancel_at.set(Some(Duration::from_millis(840)));
         let error = expose(&io, ASI6200, 2_000_000).unwrap_err();
         assert!(!error.is::<CaptureCancelled>());
         assert!(error.to_string().contains("clocks did not resume"));
@@ -496,7 +551,7 @@ mod tests {
             expose(&io, ASI6200, 2_000_000).unwrap_err().to_string(),
             "ASI6200 long exposure synchronization failed"
         );
-        assert_eq!(io.elapsed.get(), Duration::from_millis(325));
+        assert_eq!(io.elapsed.get(), Duration::from_millis(340));
         io.assert_clocks_restored();
     }
 
@@ -526,7 +581,7 @@ mod tests {
     #[test]
     fn profiles_preserve_independent_sdk_sensor_registers_and_timing() {
         for (protocol, register, long_ms, one_second_ms) in
-            [(ASI6200, 0x19e, 2125, 1025), (ASI2600, 0x1ee, 1925, 1020)]
+            [(ASI6200, 0x19e, 2140, 1040), (ASI2600, 0x1ee, 1925, 1020)]
         {
             let io = Registers::default();
             expose(&io, protocol, 2_000_000).unwrap();

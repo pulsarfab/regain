@@ -6,6 +6,7 @@ use crate::asi::direct::{asi6200_tables, processing, settings::Settings, transpo
 use anyhow::{Result, ensure};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 // SDK exposure range. Integrations >= 1 s use host timing, so their duration
@@ -35,6 +36,67 @@ impl Revision {
             Self::Original => 1515,
             Self::P25 => 880,
         }
+    }
+}
+
+/// SDK open reads ASID before initializing the sensor, then reuses both for
+/// subsequent captures. Keep only the immutable factory bytes and the most
+/// recently decoded physical ROI; never cache frame pixels or capture controls.
+#[derive(Default)]
+pub(super) struct ConnectionState {
+    generation: u64,
+    revision: Option<Revision>,
+    calibration: Option<Vec<u8>>,
+    defects: Option<([u32; 4], Arc<processing::Defects>)>,
+    initialized: bool,
+}
+impl ConnectionState {
+    fn clear(&mut self) {
+        self.calibration = None;
+        self.defects = None;
+        self.initialized = false;
+    }
+
+    fn prepare(
+        &mut self,
+        generation: u64,
+        revision: Revision,
+        roi: [u32; 4],
+        load: impl FnOnce() -> Result<Vec<u8>>,
+        initialize: impl FnOnce() -> Result<()>,
+    ) -> Result<Arc<processing::Defects>> {
+        if self.generation != generation || self.revision != Some(revision) {
+            self.clear();
+            self.generation = generation;
+            self.revision = Some(revision);
+        }
+        let result = (|| {
+            if self.calibration.is_none() {
+                self.calibration = Some(load()?);
+            }
+            if self.defects.as_ref().is_none_or(|(prior, _)| *prior != roi) {
+                let [width, height, x, y] = roi;
+                let defects = processing::Defects::decode_6200(
+                    self.calibration.as_ref().unwrap(),
+                    width as usize,
+                    height as usize,
+                    x as usize,
+                    y as usize,
+                )?;
+                self.defects = Some((roi, Arc::new(defects)));
+            }
+            // Validate calibration before any initialization writes. Only a
+            // complete setup and thermal restoration establish reusable state.
+            if !self.initialized {
+                initialize()?;
+                self.initialized = true;
+            }
+            Ok(Arc::clone(&self.defects.as_ref().unwrap().1))
+        })();
+        if result.is_err() {
+            self.clear();
+        }
+        result
     }
 }
 
@@ -83,8 +145,122 @@ fn stop(camera: &Camera) -> Result<()> {
 fn freeze(camera: &Camera) -> Result<()> {
     // Sensor-only standby preserves retained DDR. Do not add BD00 mask 0x10
     // (bit 4) or AA here: both are destructive in the P25 retention tests.
-    // Values 5 are SDK standby commands; their bit definitions are unknown.
-    writes(camera, &[(0xb6, 0x19e, 5), (0xb6, 0, 5)])
+    camera.vendor(0xb6, 0x19e, 5, 0)?;
+    // SDK 1.41 helper 1e8320 changes only sensor standby bit 0. Preserve
+    // additional sensor flags instead of assuming every firmware reads 4/5.
+    let sensor = camera.vendor(0xb7, 0, 0, 1)?[0];
+    camera.vendor(0xb6, 0, u16::from(sensor | 1), 0)?;
+    Ok(())
+}
+fn arm(
+    mut vendor: impl FnMut(u8, u16, u16, u16) -> Result<Vec<u8>>,
+    sleep: impl FnOnce(Duration),
+) -> Result<()> {
+    // SDK 1.41 helper 18d800 asserts FPGA stop again after A9, then enables
+    // sensor bit 2 and clears standby bit 0 with separate B7 read/modify/writes.
+    // Preserve other flags on both devices, including host-timed mode bits.
+    vendor(0xa9, 0, 0, 0)?;
+    let flags = vendor(0xbc, 0, 0, 1)?[0];
+    vendor(0xbd, 0, u16::from(flags | 0x10), 0)?;
+    vendor(0xb6, 0x19e, 1, 0)?;
+    let sensor = vendor(0xb7, 0, 0, 1)?[0];
+    vendor(0xb6, 0, u16::from(sensor | 4), 0)?;
+    sleep(Duration::from_millis(10));
+    let sensor = vendor(0xb7, 0, 0, 1)?[0];
+    vendor(0xb6, 0, u16::from(sensor & !1), 0)?;
+    let flags = vendor(0xbc, 0, 0, 1)?[0];
+    vendor(0xbd, 0, u16::from(flags & !0x10), 0)?;
+    Ok(())
+}
+
+fn register_snapshot(camera: &Camera, s: &Settings, stage: &str) {
+    let started = Instant::now();
+    // Capture the programmed counts/gates on healthy frames too, so a remote
+    // second-frame failure can be compared with the preceding successful one.
+    // This is read-only diagnostic evidence, not a readiness/acceptance gate.
+    // Explicit opt-out only affects healthy snapshots; failures remain visible.
+    let failure = matches!(stage, "capture_failure" | "read_failure");
+    let snapshots = std::env::var("REGAIN_CAMERA_REGISTER_SNAPSHOTS");
+    if !failure
+        && (snapshots.as_deref() == Ok("0")
+            || (!crate::asi::diagnostics::command_logging_enabled()
+                && snapshots.as_deref() != Ok("1")))
+    {
+        return;
+    }
+    // These BC mirrors are not a validated public register map. Record them
+    // for comparison with remote truncation reports; never gate acceptance on
+    // their values. Stop at the first USB failure to bound diagnostic work.
+    let mut registers = serde_json::Map::new();
+    let mut error = None;
+    for register in [
+        0x40, 0x41, 0x42, 0x43, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x00, 0x0b, 0x19, 0x23, 0x1c,
+    ] {
+        match camera.vendor(0xbc, register, 0, 1) {
+            Ok(value) => {
+                registers.insert(format!("{register:02x}"), json!(value[0]));
+            }
+            Err(failure) => {
+                error = Some(failure.to_string());
+                break;
+            }
+        }
+    }
+    let cached = camera.asi6200.borrow();
+    super::diagnostics::details(
+        "info",
+        "asi6200.register_snapshot",
+        format_args!("ASI6200 {stage} FPGA register snapshot: {registers:?}; read error {error:?}"),
+        json!({"stage":stage,"model":"ASI6200MM Pro","width":s.width,"height":s.height,
+            "x":s.x,"y":s.y,"microseconds":s.microseconds,"offset":s.offset,
+            "expectedTransferWords":s.width * s.height / 2,"expectedBytes":s.width * s.height * 2,
+            "registerReadElapsedUs":started.elapsed().as_micros(),
+            "timestampUnixUs":std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default().as_micros(),
+            "transportGeneration":camera.transport_generation(),"setupGeneration":cached.generation,
+            "initialized":cached.initialized,"registers":registers,"error":error}),
+    );
+}
+
+fn remaining_readout_guard(guard: Duration, since_ungated: Option<Duration>) -> Duration {
+    // Long mode has a verified ungated sensor after host_timed::expose. Its
+    // ready polling counts toward the full sensor interval. Short mode has no
+    // such anchor, so retain the complete guard after the ready indication.
+    guard.saturating_sub(since_ungated.unwrap_or_default())
+}
+fn freeze_readout(
+    camera: &Camera,
+    s: &Settings,
+    armed: Instant,
+    ungated: Option<Instant>,
+    readout: Duration,
+) -> Result<()> {
+    camera.phase("sensor_readout");
+    let deadline = Duration::from_micros(u64::from(s.microseconds)) + Duration::from_secs(10);
+    loop {
+        let status = camera.vendor(0xbc, 0x23, 0, 1)?[0];
+        if status & !0x10 == 5 {
+            break;
+        }
+        ensure!(
+            armed.elapsed() < deadline,
+            "ASI6200 retained-frame timeout: {status}"
+        );
+        camera.service_environment()?;
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    // Only recovery/research needs this conservative DDR-completion guard.
+    // The SDK-style normal path proves completion by consuming the full frame.
+    let remaining = remaining_readout_guard(readout, ungated.map(|anchor| anchor.elapsed()));
+    let settling = Instant::now();
+    while settling.elapsed() < remaining {
+        camera.service_environment()?;
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    freeze(camera)?;
+    camera.phase("retained");
+    register_snapshot(camera, s, "frozen_readout");
+    Ok(())
 }
 fn frame_sequence(data: &[u8]) -> Result<u16> {
     ensure!(
@@ -134,12 +310,12 @@ pub fn validate(s: &Settings, gain: i32) -> Result<()> {
     }
     Ok(())
 }
-fn calibration(camera: &Camera, s: &Settings) -> Result<processing::Defects> {
+fn calibration(camera: &Camera) -> Result<Vec<u8>> {
     // SDK brackets ASID reads with BE=0/1 (exact internal mode unknown).
     // C3's index is a 256-byte address unit: 0x400 starts at 0x40000.
     // Data is read from this camera and decoded, never copied from a fixture.
     camera.vendor(0xbe, 0, 0, 0)?;
-    let result = (|| {
+    let result: Result<Vec<u8>> = (|| {
         let mut data = camera.vendor(0xc3, 0, 0x400, 2048)?;
         let length = processing::declared_length(&data)?;
         while data.len() < length {
@@ -147,18 +323,13 @@ fn calibration(camera: &Camera, s: &Settings) -> Result<processing::Defects> {
             let amount = (length - offset).min(2048).next_multiple_of(256);
             data.extend(camera.vendor(0xc3, 0, ((0x40000 + offset) >> 8) as u16, amount as u16)?);
         }
-        processing::Defects::decode_6200(
-            &data,
-            s.width as usize,
-            s.height as usize,
-            s.x as usize,
-            s.y as usize,
-        )
+        data.truncate(length);
+        Ok(data)
     })();
     let restore = camera.vendor(0xbe, 1, 0, 0);
-    let defects = result?;
+    let data = result?;
     restore?;
-    Ok(defects)
+    Ok(data)
 }
 
 pub fn gain_registers(gain: i32) -> (u32, u16, u16, u16) {
@@ -268,8 +439,19 @@ pub fn capture(
 ) -> Result<(Value, Vec<u8>)> {
     let raw = raw_settings(s, gain, bin)?;
     let sensor = sensor_settings(&raw);
-    let (mut meta, mut data) = capture_native(camera, info, &sensor, gain, replay)?;
-    if sensor.width != raw.width || sensor.height != raw.height {
+    let (meta, data) = capture_native(camera, info, &sensor, gain, replay)?;
+    finish_output(s, &raw, &sensor, bin, meta, data)
+}
+fn finish_output(
+    s: &Settings,
+    raw: &Settings,
+    sensor: &Settings,
+    bin: u32,
+    mut meta: Value,
+    mut data: Vec<u8>,
+) -> Result<(Value, Vec<u8>)> {
+    let crop = sensor.width != raw.width || sensor.height != raw.height;
+    if crop {
         let mut cropped = Vec::with_capacity(raw.width as usize * raw.height as usize * 2);
         for row in 0..raw.height {
             let start = ((row + raw.y - sensor.y) * sensor.width + raw.x - sensor.x) as usize * 2;
@@ -292,7 +474,9 @@ pub fn capture(
     meta["x"] = json!(s.x);
     meta["y"] = json!(s.y);
     meta["bytes"] = json!(data.len());
-    meta["sha256"] = json!(format!("{:x}", Sha256::digest(&data)));
+    if crop || bin > 1 {
+        meta["sha256"] = json!(format!("{:x}", Sha256::digest(&data)));
+    }
     Ok((meta, data))
 }
 fn sensor_settings(raw: &Settings) -> Settings {
@@ -309,8 +493,8 @@ fn sensor_settings(raw: &Settings) -> Settings {
     sensor
 }
 /// Sensor initialization can reset thermal hardware even when its explicit
-/// BD19/26 defaults are skipped. Restore after calibration too, including failure
-/// paths, before cancellation can return or another exposure can be armed.
+/// BD19/26 defaults are skipped. Restore after setup, including failure paths,
+/// before cancellation can return or another exposure can be armed.
 fn initialize<T>(
     revision: Revision,
     has_environment: bool,
@@ -340,6 +524,76 @@ fn initialize<T>(
         restore_environment,
     )
 }
+fn prepare(camera: &Camera, s: &Settings, revision: Revision) -> Result<Arc<processing::Defects>> {
+    camera.asi6200.borrow_mut().prepare(
+        camera.transport_generation(),
+        revision,
+        [s.width, s.height, s.x, s.y],
+        || {
+            // SDK flash reads precede AF/sensor setup. They need no actuator
+            // writes on success; an uncertain read still restores cached state.
+            match calibration(camera) {
+                Ok(data) => Ok(data),
+                Err(error) => super::initialization::preserve_environment(
+                    "ASI6200",
+                    || Err(error),
+                    || camera.restore_environment(),
+                ),
+            }
+        },
+        || {
+            // SDK restores thermal state during init, BEFORE RAW16. The 0.6.0.4
+            // change added unconditional post-RAW16 actuator rewrites on
+            // every frame. Reuse setup and only repair an observed reset here.
+            initialize(
+                revision,
+                camera.has_environment(),
+                |request, register, value| {
+                    camera.vendor(request, register, value, 0)?;
+                    Ok(())
+                },
+                || Ok(()),
+                || camera.restore_environment(),
+            )?;
+            finish_raw16(
+                || writes(camera, asi6200_tables::RAW16),
+                || camera.verify_environment(),
+                || camera.restore_environment(),
+            )
+        },
+    )
+}
+fn finish_raw16(
+    configure: impl FnOnce() -> Result<()>,
+    verify: impl FnOnce() -> Result<()>,
+    restore: impl FnOnce() -> Result<()>,
+) -> Result<()> {
+    match configure() {
+        Ok(()) if verify().is_ok() => Ok(()),
+        Ok(()) => restore(),
+        Err(error) => {
+            super::initialization::preserve_environment("ASI6200", || Err(error), restore)
+        }
+    }
+}
+/// Like SDK open/init, establish factory correction and sensor setup before
+/// acknowledging the selected connection. Discovery must never call this.
+pub(super) fn initialize_connection(camera: &Camera, info: &Value) -> Result<()> {
+    super::link::validate(info, 0x620b)?;
+    let revision = Revision::detect(camera)?;
+    let settings = Settings {
+        width: 9576,
+        height: 6388,
+        ..Settings::default()
+    };
+    prepare(camera, &settings, revision)?;
+    Ok(())
+}
+fn retained_read_allowed(error: &anyhow::Error, exposure_complete: bool) -> bool {
+    exposure_complete
+        && !error.is::<super::completion::CaptureCancelled>()
+        && !super::transfer::Failure::details(error).is_null()
+}
 fn capture_native(
     camera: &Camera,
     info: &Value,
@@ -353,20 +607,7 @@ fn capture_native(
     let revision = Revision::detect(camera)?;
     camera.phase("initializing");
     let result = (|| {
-        let defects = initialize(
-            revision,
-            camera.has_environment(),
-            |request, register, value| {
-                camera.vendor(request, register, value, 0)?;
-                Ok(())
-            },
-            || {
-                let defects = calibration(camera, s)?;
-                writes(camera, asi6200_tables::RAW16)?;
-                Ok(defects)
-            },
-            || camera.restore_environment(),
-        )?;
+        let defects = prepare(camera, s, revision)?;
         // Fixed SDK FPGA words BD06=49 (0x31), BD02=24 (0x18). Their individual
         // meanings are not decoded; keep them distinct from the user's ROI.
         word(camera, 0xbd, 6, 49, 2)?;
@@ -429,62 +670,73 @@ fn capture_native(
             }),
             0,
         )?;
+        register_snapshot(camera, s, "programmed");
         stop(camera)?;
         let old = camera.vendor(0xbc, 0x23, 0, 1)?[0];
         ensure!(old == 1, "ASI6200 old frame did not clear: {old}");
+        register_snapshot(camera, s, "pre_arm");
         // Do not start a new acquisition if cancellation arrived during setup.
         camera.service_environment()?;
         let armed = Instant::now();
         camera.phase("exposing");
-        // SDK arm/start order: A9, sensor resume 019e=1, sensor 00=5,
-        // 50 ms, sensor 00=4, clear FPGA stop bit 4, then drain/reset the pipe.
-        // Values 4/5 are observed sensor states, not decoded bitfield names.
-        writes(camera, &[(0xa9, 0, 0), (0xb6, 0x19e, 1), (0xb6, 0, 5)])?;
-        std::thread::sleep(Duration::from_millis(50));
-        camera.vendor(0xb6, 0, 4, 0)?;
-        let flags = camera.vendor(0xbc, 0, 0, 1)?[0];
-        camera.vendor(0xbd, 0, u16::from(flags & !0x10), 0)?;
+        arm(
+            |request, register, value, length| camera.vendor(request, register, value, length),
+            std::thread::sleep,
+        )?;
         camera.reset_pipe()?;
-        if s.microseconds >= 1_000_000 {
-            super::host_timed::expose(camera, super::host_timed::ASI6200, s.microseconds)?;
-        }
-        let deadline = Duration::from_micros(u64::from(s.microseconds)) + Duration::from_secs(10);
-        loop {
-            let status = camera.vendor(0xbc, 0x23, 0, 1)?[0];
-            if status == 0x15 {
-                break;
-            }
-            ensure!(
-                armed.elapsed() < deadline,
-                "ASI6200 retained-frame timeout: {status}"
-            );
-            camera.service_environment()?;
-            std::thread::sleep(Duration::from_millis(5));
-        }
-        // BC23=15 announces readout, not completion of all sensor rows.
-        // Allow the complete programmed frame (HMAX / 20 MHz per row),
-        // plus a settling margin, before stopping the sensor. The ready bit
-        // alone can freeze partially refreshed DDR with a valid envelope.
         let readout = Duration::from_micros(
             (u64::from(frame) * u64::from(revision.hmax())).div_ceil(20) + 100000,
         );
-        camera.phase("sensor_readout");
-        let settling = Instant::now();
-        while settling.elapsed() < readout {
-            camera.service_environment()?;
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        freeze(camera)?;
-        camera.phase("retained");
-        // Short mode streams while DDR fills; discard the queued USB pass and
-        // read frozen DDR. Long mode schedules one pass, which must be consumed.
-        if s.microseconds < 1_000_000 {
-            begin_retained_read(camera)?;
-        }
+        let frame_bytes = s.width as usize * s.height as usize * 2;
+        let mut continuity = super::transfer::Continuity::default();
+        let mut ungated = None;
+        let mut exposure_complete = false;
+        let mut expose = || -> Result<()> {
+            if s.microseconds >= 1_000_000 {
+                super::host_timed::expose(camera, super::host_timed::ASI6200, s.microseconds)?;
+                ungated = Some(Instant::now());
+            }
+            exposure_complete = true;
+            Ok(())
+        };
+        // Explicit retained-sender research keeps its established injection
+        // point. Production first-pass reads follow SDK timing instead: queue
+        // before synchronization, overlap readout, freeze only after completion.
+        let research_read = s.timeout_read_after_bytes > 0 || s.interrupt_read_after_bytes > 0;
+        let mut first_pass = if research_read {
+            expose()?;
+            freeze_readout(camera, s, armed, ungated, readout)?;
+            if s.microseconds < 1_000_000 {
+                begin_retained_read(camera)?;
+            }
+            None
+        } else {
+            let first = camera.read_frame_during(frame_bytes, &mut continuity, expose);
+            if let Err(error) = &first {
+                // Queue submission can fail before expose() runs, including
+                // with structured transfer evidence. Never replay a frame
+                // whose exposure handshake did not complete. All queued I/O
+                // has drained before this exit.
+                if !retained_read_allowed(error, exposure_complete) {
+                    return Err(first.unwrap_err());
+                }
+                freeze_readout(camera, s, armed, ungated, readout)?;
+            } else {
+                freeze(camera)?;
+                camera.phase("retained");
+                register_snapshot(camera, s, "completed_readout");
+            }
+            Some(first)
+        };
         let mut prefix = Vec::new();
         let mut read_errors = Vec::new();
         let mut data = loop {
             let attempt = (|| {
+                if let Some(first) = first_pass.take() {
+                    let data = first?;
+                    frame_sequence(&data)?;
+                    return Ok(data);
+                }
                 if read_errors.is_empty() && s.timeout_read_after_bytes > 0 {
                     prefix = camera.read_frame(s.timeout_read_after_bytes as usize)?;
                     // Research CLI only: stop the retained-frame sender and drain
@@ -499,7 +751,7 @@ fn capture_native(
                     prefix = camera.read_frame(s.interrupt_read_after_bytes as usize)?;
                     anyhow::bail!("injected host interruption after {} bytes", prefix.len());
                 }
-                let data = camera.read_frame(s.width as usize * s.height as usize * 2)?;
+                let data = camera.read_frame_checked(frame_bytes, 5000, &mut continuity)?;
                 frame_sequence(&data)?;
                 Ok(data)
             })();
@@ -509,6 +761,7 @@ fn capture_native(
                     if error.is::<super::completion::CaptureCancelled>() {
                         return Err(error);
                     }
+                    register_snapshot(camera, s, "read_failure");
                     crate::asi::direct::diagnostics::read_failure(
                         "ASI6200MM Pro",
                         &error,
@@ -575,23 +828,331 @@ fn capture_native(
             "wireSha256":wire_hash,"sha256":format!("{:x}",Sha256::digest(&data)),"sequence":sequence,
             "factoryDefects":defects.indices.len(),"acquisitionMs":armed.elapsed().as_millis(),"elapsedMs":started.elapsed().as_millis(),
             "readoutGuardUs":readout.as_micros(),"sensorHmax":revision.hmax(),
+            "downloadPipeline":if research_read {"retained-research"} else {"sdk-queued"},
+            "retainedPixelsVerified":continuity.verified_bytes() > 0,
             "hardwareRevision":if revision == Revision::P25 {5} else {3},
             "replay":replay_result,"sdkLoaded":false,"readRecoveries":read_errors.len(),"readErrors":read_errors,
             "interruptedPrefixBytes":prefix.len(),"interruptedPrefixPixelsMatch":!prefix.is_empty(),
             "timeoutInjectionBytes":s.timeout_read_after_bytes});
         Ok((meta, data))
     })();
+    if result
+        .as_ref()
+        .is_err_and(|error| !error.is::<super::completion::CaptureCancelled>())
+    {
+        register_snapshot(camera, s, "capture_failure");
+        camera.asi6200.borrow_mut().clear();
+    }
     let cleanup = stop(camera);
+    if cleanup.is_err() {
+        camera.asi6200.borrow_mut().clear();
+    }
     crate::asi::direct::completion::finish(result, cleanup)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::{Cell, RefCell};
+
+    fn empty_calibration() -> Vec<u8> {
+        [b"ASID".as_slice(), &8_u32.to_be_bytes()].concat()
+    }
+    #[test]
+    fn queued_failures_cannot_replay_before_a_completed_exposure() {
+        for category in ["submission", "timeout", "short_read"] {
+            let error = anyhow::Error::new(super::super::transfer::Failure::new(
+                category,
+                122_342_976,
+                0,
+                false,
+            ))
+            .context("first queued USB batch");
+            assert!(!retained_read_allowed(&error, false), "{category}");
+            assert!(retained_read_allowed(&error, true), "{category}");
+        }
+        for exposure_complete in [false, true] {
+            assert!(!retained_read_allowed(
+                &super::super::completion::CaptureCancelled.into(),
+                exposure_complete
+            ));
+            assert!(!retained_read_allowed(
+                &anyhow::anyhow!("sensor handshake failed"),
+                exposure_complete
+            ));
+        }
+    }
+    #[test]
+    fn raw16_does_not_rewrite_preserved_thermal_state_but_repairs_resets_and_errors() {
+        for (resets, fails) in [(false, false), (true, false), (true, true)] {
+            let heater = Cell::new(true);
+            let restores = Cell::new(0);
+            let verified = Cell::new(false);
+            let result = finish_raw16(
+                || {
+                    if resets {
+                        heater.set(false);
+                    }
+                    if fails {
+                        anyhow::bail!("sensor setup USB failure");
+                    }
+                    Ok(())
+                },
+                || {
+                    verified.set(true);
+                    ensure!(heater.get(), "heater reset by setup");
+                    Ok(())
+                },
+                || {
+                    restores.set(restores.get() + 1);
+                    heater.set(true);
+                    Ok(())
+                },
+            );
+            assert!(heater.get());
+            assert_eq!(restores.get(), usize::from(resets));
+            assert_eq!(verified.get(), !fails);
+            assert_eq!(result.is_err(), fails);
+        }
+        assert!(
+            finish_raw16(
+                || Ok(()),
+                || anyhow::bail!("unreadable state"),
+                || anyhow::bail!("restore failed")
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn connection_setup_validates_calibration_before_initializing_once() {
+        let mut state = ConnectionState::default();
+        let events = RefCell::new(Vec::new());
+        let first = state
+            .prepare(
+                0,
+                Revision::Original,
+                [64, 64, 0, 0],
+                || {
+                    events.borrow_mut().push("calibration");
+                    Ok(empty_calibration())
+                },
+                || {
+                    events.borrow_mut().push("initialize_raw16");
+                    Ok(())
+                },
+            )
+            .unwrap();
+        let second = state
+            .prepare(
+                0,
+                Revision::Original,
+                [64, 64, 0, 0],
+                || panic!("factory calibration must be reused"),
+                || panic!("sensor initialization must be reused"),
+            )
+            .unwrap();
+        assert_eq!(*events.borrow(), ["calibration", "initialize_raw16"]);
+        assert!(Arc::ptr_eq(&first, &second));
+        assert!(state.initialized);
+
+        // A changed physical ROI gets its own correction map without resetting
+        // the sensor. Per-capture ROI/controls are programmed after prepare.
+        let reconfigured = state
+            .prepare(
+                0,
+                Revision::Original,
+                [128, 64, 16, 2],
+                || panic!("ROI changes must not reread immutable calibration"),
+                || panic!("ROI changes must not reset initialized hardware"),
+            )
+            .unwrap();
+        assert!(!Arc::ptr_eq(&first, &reconfigured));
+        assert_eq!(state.defects.as_ref().unwrap().0, [128, 64, 16, 2]);
+        assert!(reconfigured.correct(&mut vec![0; 128 * 64 * 2]).is_ok());
+        assert_eq!(Arc::strong_count(&first), 2);
+    }
+
+    #[test]
+    fn failed_or_invalid_setup_is_not_cached_and_transport_changes_reload() {
+        let mut state = ConnectionState::default();
+        let initializations = Cell::new(0);
+        let invalid = state.prepare(
+            0,
+            Revision::Original,
+            [64, 64, 0, 0],
+            || Ok(b"invalid ASID".to_vec()),
+            || {
+                initializations.set(initializations.get() + 1);
+                Ok(())
+            },
+        );
+        assert!(invalid.is_err());
+        assert_eq!(initializations.get(), 0);
+        assert!(state.calibration.is_none() && state.defects.is_none() && !state.initialized);
+        let failed = state.prepare(
+            0,
+            Revision::Original,
+            [64, 64, 0, 0],
+            || Ok(empty_calibration()),
+            || anyhow::bail!("initialization or thermal restore failed"),
+        );
+        assert!(failed.is_err());
+        assert!(state.calibration.is_none() && state.defects.is_none() && !state.initialized);
+
+        let loads = Cell::new(0);
+        // A new transport generation models a USB failure or reopening the
+        // handle. Revision changes also require a complete fresh setup.
+        for (generation, revision) in [
+            (0, Revision::Original),
+            (1, Revision::Original),
+            (1, Revision::P25),
+        ] {
+            state
+                .prepare(
+                    generation,
+                    revision,
+                    [64, 64, 0, 0],
+                    || {
+                        loads.set(loads.get() + 1);
+                        Ok(empty_calibration())
+                    },
+                    || {
+                        initializations.set(initializations.get() + 1);
+                        Ok(())
+                    },
+                )
+                .unwrap();
+        }
+        assert_eq!(loads.get(), 3);
+        assert_eq!(initializations.get(), 3);
+    }
+
+    #[test]
+    fn sdk_arm_preserves_sensor_and_fpga_bits_with_ten_ms_delay() {
+        let operations = RefCell::new(Vec::new());
+        let flags = Cell::new(0xc1_u8);
+        let sensor = Cell::new(0x21_u8);
+        arm(
+            |request, register, value, length| {
+                operations
+                    .borrow_mut()
+                    .push((request, register, value, length));
+                match (request, register) {
+                    (0xbc, 0) => return Ok(vec![flags.get()]),
+                    (0xb7, 0) => return Ok(vec![sensor.get()]),
+                    (0xbd, 0) => flags.set(value as u8),
+                    (0xb6, 0) => sensor.set(value as u8),
+                    _ => {}
+                }
+                Ok(Vec::new())
+            },
+            |delay| {
+                assert_eq!(delay, Duration::from_millis(10));
+                operations.borrow_mut().push((0xff, 10, 0, 0));
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            *operations.borrow(),
+            [
+                (0xa9, 0, 0, 0),
+                (0xbc, 0, 0, 1),
+                (0xbd, 0, 0xd1, 0),
+                (0xb6, 0x19e, 1, 0),
+                (0xb7, 0, 0, 1),
+                (0xb6, 0, 0x25, 0),
+                (0xff, 10, 0, 0),
+                (0xb7, 0, 0, 1),
+                (0xb6, 0, 0x24, 0),
+                (0xbc, 0, 0, 1),
+                (0xbd, 0, 0xc1, 0),
+            ]
+        );
+    }
+
+    #[test]
+    fn full_readout_guard_counts_only_known_ungated_time() {
+        let guard = Duration::from_millis(600);
+        for (ungated_ms, expected_ms) in [
+            (None, 600),    // Short mode retains the complete post-ready guard.
+            (Some(0), 600), // An early P25 ready indication cannot shorten it.
+            (Some(487), 113),
+            (Some(600), 0),
+            (Some(900), 0),
+        ] {
+            assert_eq!(
+                remaining_readout_guard(guard, ungated_ms.map(Duration::from_millis)),
+                Duration::from_millis(expected_ms)
+            );
+        }
+    }
+
+    fn pixels(values: impl IntoIterator<Item = u16>) -> Vec<u8> {
+        values.into_iter().flat_map(u16::to_le_bytes).collect()
+    }
+
+    #[test]
+    fn output_reuses_native_hash_until_crop_or_binning_changes_pixels() {
+        let sensor = Settings {
+            width: 4,
+            height: 4,
+            ..Settings::default()
+        };
+        let data = pixels(0..16);
+        let (meta, unchanged) = finish_output(
+            &sensor,
+            &sensor,
+            &sensor,
+            1,
+            json!({"sha256":"native_hash"}),
+            data.clone(),
+        )
+        .unwrap();
+        assert_eq!(unchanged, data);
+        assert_eq!(meta["sha256"], "native_hash");
+
+        let cropped = Settings {
+            width: 2,
+            height: 2,
+            x: 1,
+            y: 1,
+            ..sensor.clone()
+        };
+        let (meta, result) = finish_output(
+            &cropped,
+            &cropped,
+            &sensor,
+            1,
+            json!({"sha256":"native_hash"}),
+            data.clone(),
+        )
+        .unwrap();
+        assert_eq!(result, pixels([5, 6, 9, 10]));
+        assert_eq!(meta["sha256"], format!("{:x}", Sha256::digest(&result)));
+        assert_eq!(meta["wireBytes"], 32);
+
+        let binned = Settings {
+            width: 2,
+            height: 2,
+            ..sensor.clone()
+        };
+        let (meta, result) = finish_output(
+            &binned,
+            &sensor,
+            &sensor,
+            2,
+            json!({"sha256":"native_hash"}),
+            data,
+        )
+        .unwrap();
+        assert_eq!(result, pixels([2, 4, 10, 12]));
+        assert_eq!(meta["sha256"], format!("{:x}", Sha256::digest(&result)));
+        assert_eq!(meta["bin"], 2);
+    }
 
     #[test]
     fn initialization_restores_thermal_hardware_after_configuration_and_errors() {
-        use std::cell::Cell;
         // The original ASI6200 acceptance trace showed the requested heater bit
         // lost during initialization despite skipping explicit thermal defaults.
         // Model that side effect, including an uncertain USB write completion.
