@@ -1,4 +1,4 @@
-# PulsarFab regain 0.6.1.0
+# PulsarFab regain 0.6.1.1
 
 Recover camera connections before an exposure starts, prepare Windows USB resets
 before the night, and reconnect affected NINA peripherals before imaging resumes.
@@ -27,7 +27,7 @@ before the night, and reconnect affected NINA peripherals before imaging resumes
 USB reset remains disabled by default. The Windows operation cycles the selected
 camera port; this is not a guaranteed camera-hub or external-power cycle. Camera
 hub peripherals may disconnect. Wider companion-port/upstream-hub resets remain
-planned work. See [USB recovery setup](https://github.com/pulsarfab/regain/blob/v0.6.1.0/docs/usb-recovery.md).
+planned work. See [USB recovery setup](https://github.com/pulsarfab/regain/blob/v0.6.1.1/docs/usb-recovery.md).
 
 Validation included complete Rust and managed recovery suites, full-frame direct
 and SDK thermal/cancellation captures, and installed NINA acceptance on ASI6200MM
@@ -38,8 +38,8 @@ supervisor restart. The CAA driver reported no disconnect in that pass; a separa
 injected-disconnect pass verified its reconnection. Physical Linux USB recovery
 and clean-machine/LAN environment checks remain unvalidated locally.
 
-Use `Regain-0.6.1.0.zip` for NINA or
-`Regain-ASCOM-0.6.1.0-win-x64-setup.exe` for Windows ASCOM and Alpaca.
+Use `Regain-0.6.1.1.zip` for NINA or
+`Regain-ASCOM-0.6.1.1-win-x64-setup.exe` for Windows ASCOM and Alpaca.
 Rust workspace crates use version `0.6.1`. Regain Hub remains a preview; direct USB
 support remains model-specific. See
-[supported hardware](https://github.com/pulsarfab/regain/blob/v0.6.1.0/README.md#supported-hardware).
+[supported hardware](https://github.com/pulsarfab/regain/blob/v0.6.1.1/README.md#supported-hardware).

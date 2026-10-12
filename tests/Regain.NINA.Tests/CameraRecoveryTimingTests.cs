@@ -22,7 +22,10 @@ public sealed class CameraRecoveryTimingTests
         var profiles = new Mock<IProfileService>();
         profiles.Setup(value => value.ActiveProfile.CameraSettings).Returns(settings.Object);
         var options = new RecoveryOptions {
-            MaxRetries = 0, PreExposureReconnectAttempts = 10, CommandTimeoutSeconds = 1,
+            // Opening starts both supervisor and worker processes. Keep the
+            // normal command deadline for a cold CI host; this test asserts
+            // the capture budget, not how quickly those processes start.
+            MaxRetries = 0, PreExposureReconnectAttempts = 10,
             ReconnectDelaySeconds = .01, UsbResetAfterFailures = usbReset ? 1 : 0
         };
         var camera = new ResilientCamera(new("ZWO ASI6200MM Pro", 9576, 6388, false, 0, 3.76, 16, true, false, [1]),
