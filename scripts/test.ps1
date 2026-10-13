@@ -17,6 +17,9 @@ try {
     if ($LASTEXITCODE) { throw 'Rust lint failed' }
     cargo build --locked
     if ($LASTEXITCODE) { throw 'Test host build failed' }
+    # Check restricted-token process launch as soon as its native host exists.
+    python scripts/test-usb-helper.py
+    if ($LASTEXITCODE) { throw 'Prepared USB helper process tests failed' }
     python scripts/test-device.py
     if ($LASTEXITCODE) { throw 'Unified device CLI tests failed' }
     $previousWorkerDirectory = $env:REGAIN_TEST_WORKERS
@@ -50,8 +53,6 @@ try {
     if ($LASTEXITCODE) { throw 'Native camera IPC tests failed' }
     python scripts/test-usb-recovery.py
     if ($LASTEXITCODE) { throw 'USB recovery tests failed' }
-    python scripts/test-usb-helper.py
-    if ($LASTEXITCODE) { throw 'Prepared USB helper process tests failed' }
     python scripts/test-alpaca-rotator.py
     if ($LASTEXITCODE) { throw 'Alpaca rotator tests failed' }
     python scripts/test-alpaca-falcon.py

@@ -89,6 +89,122 @@ def unelevated_pipe_squatter():
             kernel.CloseHandle(token)
 
 
+@contextmanager
+def restricted_launch_desktop(token):
+    """Give the child private GUI objects accessible with its restricted token.
+
+    A hosted runner can own an administrator-only, high-integrity window
+    station. Inheriting it can make User32 fail during DLL initialization,
+    before Python or our non-admin assertions run. Keep the runner's existing
+    objects unchanged and create a noninteractive pair for this test only.
+    """
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    advapi = ctypes.WinDLL("advapi32", use_last_error=True)
+    user = ctypes.WinDLL("user32", use_last_error=True)
+
+    class SecurityAttributes(ctypes.Structure):
+        _fields_ = [("length", wintypes.DWORD), ("descriptor", ctypes.c_void_p),
+                    ("inherit", wintypes.BOOL)]
+
+    class TokenOwner(ctypes.Structure):
+        _fields_ = [("Sid", ctypes.c_void_p)]
+
+    class TokenDefaultDacl(ctypes.Structure):
+        _fields_ = [("DefaultDacl", ctypes.c_void_p)]
+
+    kernel.GetCurrentThreadId.restype = wintypes.DWORD
+    kernel.LocalFree.argtypes = [ctypes.c_void_p]
+    advapi.GetTokenInformation.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p,
+                                           wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
+    advapi.ConvertSidToStringSidW.argtypes = [ctypes.c_void_p, ctypes.POINTER(wintypes.LPWSTR)]
+    advapi.ConvertStringSecurityDescriptorToSecurityDescriptorW.argtypes = [
+        wintypes.LPCWSTR, wintypes.DWORD, ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(wintypes.DWORD)]
+    advapi.GetSecurityDescriptorDacl.argtypes = [ctypes.c_void_p, ctypes.POINTER(wintypes.BOOL),
+                                                ctypes.POINTER(ctypes.c_void_p),
+                                                ctypes.POINTER(wintypes.BOOL)]
+    advapi.SetTokenInformation.argtypes = [wintypes.HANDLE, ctypes.c_int,
+                                          ctypes.c_void_p, wintypes.DWORD]
+    user.GetProcessWindowStation.restype = wintypes.HANDLE
+    user.GetThreadDesktop.argtypes = [wintypes.DWORD]
+    user.GetThreadDesktop.restype = wintypes.HANDLE
+    user.SetProcessWindowStation.argtypes = [wintypes.HANDLE]
+    user.SetThreadDesktop.argtypes = [wintypes.HANDLE]
+    user.CreateWindowStationW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+                                         ctypes.POINTER(SecurityAttributes)]
+    user.CreateWindowStationW.restype = wintypes.HANDLE
+    user.CreateDesktopW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR, ctypes.c_void_p,
+                                    wintypes.DWORD, wintypes.DWORD,
+                                    ctypes.POINTER(SecurityAttributes)]
+    user.CreateDesktopW.restype = wintypes.HANDLE
+    user.CloseDesktop.argtypes = [wintypes.HANDLE]
+    user.CloseWindowStation.argtypes = [wintypes.HANDLE]
+
+    def checked(success, operation):
+        if not success:
+            raise ctypes.WinError(ctypes.get_last_error(), operation)
+        return success
+
+    sid, descriptor = wintypes.LPWSTR(), ctypes.c_void_p()
+    station = desktop = None
+    original_station = checked(user.GetProcessWindowStation(), "Read test window station")
+    original_desktop = checked(user.GetThreadDesktop(kernel.GetCurrentThreadId()),
+                               "Read test thread desktop")
+    try:
+        size = wintypes.DWORD()
+        advapi.GetTokenInformation(token, 1, None, 0, ctypes.byref(size))
+        require(0 < size.value <= 65536, "Invalid restricted token user size")
+        token_user = ctypes.create_string_buffer(size.value)
+        checked(advapi.GetTokenInformation(token, 1, token_user, len(token_user),
+                                           ctypes.byref(size)), "Read restricted token user")
+        user_sid = ctypes.cast(token_user, ctypes.POINTER(ctypes.c_void_p))[0]
+        checked(advapi.ConvertSidToStringSidW(user_sid, ctypes.byref(sid)),
+                "Format restricted token user SID")
+        # Only the unchanged user SID and SYSTEM receive access. Explicit medium
+        # integrity prevents a high-integrity runner labeling these objects high.
+        sddl = f"O:{sid.value}D:P(A;;GA;;;SY)(A;;GA;;;{sid.value})S:(ML;;NW;;;ME)"
+        checked(advapi.ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            sddl, 1, ctypes.byref(descriptor), None), "Build private test desktop security")
+        # Do not inherit administrator-only defaults for child-created objects.
+        # This changes only the new restricted token, never the caller's token.
+        present, defaulted, acl = wintypes.BOOL(), wintypes.BOOL(), ctypes.c_void_p()
+        checked(advapi.GetSecurityDescriptorDacl(descriptor, ctypes.byref(present),
+                                                 ctypes.byref(acl), ctypes.byref(defaulted)),
+                "Read private test default DACL")
+        require(present.value and acl.value, "Missing private test DACL")
+        default_dacl = TokenDefaultDacl(acl)
+        owner = TokenOwner(user_sid)
+        checked(advapi.SetTokenInformation(token, 6, ctypes.byref(default_dacl),
+                                            ctypes.sizeof(default_dacl)),
+                "Set restricted child default DACL")
+        checked(advapi.SetTokenInformation(token, 4, ctypes.byref(owner), ctypes.sizeof(owner)),
+                "Set restricted child owner")
+        security = SecurityAttributes(ctypes.sizeof(SecurityAttributes), descriptor, False)
+        station_name = "RegainUsbHelperTest-" + uuid.uuid4().hex
+        # CWF_CREATE_ONLY; fail rather than opening an existing named object.
+        station = checked(user.CreateWindowStationW(station_name, 1, 0x10000000,
+                                                     ctypes.byref(security)),
+                          "Create private test window station")
+        try:
+            checked(user.SetProcessWindowStation(station), "Select private test window station")
+            desktop = checked(user.CreateDesktopW("ProtocolChecks", None, None, 0,
+                                                    0x10000000, ctypes.byref(security)),
+                              "Create private test desktop")
+        finally:
+            checked(user.SetProcessWindowStation(original_station), "Restore test window station")
+            checked(user.SetThreadDesktop(original_desktop), "Restore test thread desktop")
+        yield station_name + "\\ProtocolChecks"
+    finally:
+        if desktop:
+            checked(user.CloseDesktop(desktop), "Close private test desktop")
+        if station:
+            checked(user.CloseWindowStation(station), "Close private test window station")
+        if descriptor:
+            kernel.LocalFree(descriptor)
+        if sid:
+            kernel.LocalFree(ctypes.cast(sid, ctypes.c_void_p))
+
+
 def restricted_child(arguments):
     """Start this test with the caller's admin membership disabled, not runas."""
     import msvcrt
@@ -164,11 +280,13 @@ def restricted_child(arguments):
                 "Lower test child integrity")
         command = ctypes.create_unicode_buffer(subprocess.list2cmdline(
             [sys.executable, str(Path(__file__).resolve()), *arguments, "--require-unelevated"]))
-        with tempfile.TemporaryFile() as output, open(os.devnull, "rb") as input_file:
+        with restricted_launch_desktop(restricted) as desktop, \
+                tempfile.TemporaryFile() as output, open(os.devnull, "rb") as input_file:
             for stream in (output, input_file):
                 os.set_inheritable(stream.fileno(), True)
             startup = StartupInfo()
             startup.cb, startup.flags = ctypes.sizeof(startup), 0x101
+            startup.desktop = desktop
             startup.stdin = msvcrt.get_osfhandle(input_file.fileno())
             startup.stdout = startup.stderr = msvcrt.get_osfhandle(output.fileno())
             try:
@@ -189,7 +307,8 @@ def restricted_child(arguments):
             require(waited == 0, "Restricted USB-helper process checks exceeded 60 seconds")
             code = wintypes.DWORD()
             checked(kernel.GetExitCodeProcess(info.process, ctypes.byref(code)), "Read test exit code")
-            require(code.value == 0, f"Restricted USB-helper process checks failed ({code.value})")
+            require(code.value == 0,
+                    f"Restricted USB-helper process checks failed ({code.value}, 0x{code.value:08X})")
     finally:
         for handle in (info.thread, info.process, restricted, original):
             if handle:
