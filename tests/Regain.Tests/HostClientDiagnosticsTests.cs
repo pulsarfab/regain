@@ -37,6 +37,59 @@ public class HostClientDiagnosticsTests
         }
         Assert.Equal(["usb.failed", "ipc.command.failed"], quiet.Select(line => Parse(line).GetProperty("event").GetString()));
         Assert.Equal(["ipc.command.complete", "usb.complete", "usb.failed", "ipc.command.failed"], verbose.Select(line => Parse(line).GetProperty("event").GetString()));
+        Assert.Equal("warning", Parse(quiet[^1]).GetProperty("level").GetString());
+        Assert.Equal("warning", Parse(verbose[^1]).GetProperty("level").GetString());
+    }
+
+    [Fact]
+    public async Task RetiringWorkerDrainsQueuedNativeFailureBeforeDiscardingStderrReader()
+    {
+        string worker = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../target/debug/regain-device.exe"));
+        var blocked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var nativeFailure = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        int blockedOnce = 0;
+        using var host = new HostClient(worker, "unused", simulate: true, log: line => {
+            if (!line.StartsWith(Prefix, StringComparison.Ordinal)) return;
+            var record = Parse(line);
+            string? kind = record.GetProperty("event").GetString();
+            if (kind == "diagnostics.manual" && Interlocked.Exchange(ref blockedOnce, 1) == 0) {
+                blocked.TrySetResult();
+                release.Task.GetAwaiter().GetResult();
+            }
+            if (kind == "command.failed") nativeFailure.TrySetResult(line);
+        });
+        Task? retiring = null;
+        try {
+            var timeout = TimeSpan.FromSeconds(15);
+            await host.CallAsync("open", new { name = "ZWO Simulated" }, timeout, default);
+            // Block an earlier native record, leaving the later failure queued
+            // behind it. Tiny metadata still fits the worker's stderr pipe.
+            await host.CallAsync("diagnostics-dump", null, timeout, default);
+            await blocked.Task.WaitAsync(timeout);
+            await host.CallAsync("fault", new { kind = "download" }, timeout, default);
+            await host.CallAsync("start", new { width = 960, height = 640, bin = 1,
+                x = 0, y = 0, microseconds = 1000, dark = false }, timeout, default);
+            await Assert.ThrowsAsync<SdkException>(() => host.CallAsync("download", null, timeout, default));
+            Assert.False(nativeFailure.Task.IsCompleted);
+            using var process = Process.GetProcessById(host.ProcessId);
+            retiring = Task.Run(host.Dispose);
+            await process.WaitForExitAsync().WaitAsync(timeout);
+            // Process exit alone is insufficient: retirement must remain behind
+            // the deliberately held callback until queued records reach the sink.
+            await Task.WhenAny(retiring, Task.Delay(200));
+            Assert.False(retiring.IsCompleted, "Worker retirement discarded its queued stderr before EOF");
+            release.TrySetResult();
+            await retiring.WaitAsync(timeout);
+            Assert.True(nativeFailure.Task.IsCompletedSuccessfully);
+            var failure = Parse(await nativeFailure.Task);
+            Assert.Equal("warning", failure.GetProperty("level").GetString());
+            Assert.Contains("ASI error 11", failure.GetProperty("message").GetString());
+        }
+        finally {
+            release.TrySetResult();
+            if (retiring is not null) await retiring.WaitAsync(TimeSpan.FromSeconds(15));
+        }
     }
     private const string Prefix = "REGAIN_DIAGNOSTIC ";
     private static JsonElement Parse(string line) => JsonDocument.Parse(line[Prefix.Length..]).RootElement.Clone();

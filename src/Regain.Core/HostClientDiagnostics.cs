@@ -126,7 +126,7 @@ internal sealed class HostClientDiagnostics(Action<string>? sink, string backend
         try
         {
             Route(Prefix + JsonSerializer.Serialize(new {
-                version = 1, level = "info", @event = kind, message = $"Managed IPC {method}: {kind}",
+                version = 1, level = kind == "ipc.command.failed" ? "warning" : "info", @event = kind, message = $"Managed IPC {method}: {kind}",
                 pid = Environment.ProcessId, timestampUnixUs = (DateTime.UtcNow.Ticks - DateTime.UnixEpoch.Ticks) / 10,
                 elapsedUs, method, requestId = id, managedContext = Snapshot(), details
             }), kind, kind == "ipc.command.failed" ? "warning" : "info");
