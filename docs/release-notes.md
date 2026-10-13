@@ -1,4 +1,4 @@
-# PulsarFab regain 0.6.1.3
+# PulsarFab regain 0.6.1.4
 
 Recover camera connections before an exposure starts, prepare Windows USB resets
 before the night, and reconnect affected NINA peripherals before imaging resumes.
@@ -9,6 +9,8 @@ before the night, and reconnect affected NINA peripherals before imaging resumes
   session. Automatic recovery never opens an elevation prompt. Turning the option
   off immediately removes that camera's approval; the last approval stops the
   helper. Windows Alpaca uses the same helper through the device CLI.
+- Helper authentication checks administrator membership and integrity as well as
+  Windows' elevation flag, rejecting restricted processes before protocol I/O.
 - **Pre-exposure reconnect attempts** bounds connection and settings restoration
   before the first exposure start, including long exposures. This does not permit
   replacing a long exposure or replaying a setting whose acknowledgement was lost.
@@ -27,7 +29,7 @@ before the night, and reconnect affected NINA peripherals before imaging resumes
 USB reset remains disabled by default. The Windows operation cycles the selected
 camera port; this is not a guaranteed camera-hub or external-power cycle. Camera
 hub peripherals may disconnect. Wider companion-port/upstream-hub resets remain
-planned work. See [USB recovery setup](https://github.com/pulsarfab/regain/blob/v0.6.1.3/docs/usb-recovery.md).
+planned work. See [USB recovery setup](https://github.com/pulsarfab/regain/blob/v0.6.1.4/docs/usb-recovery.md).
 
 Validation included complete Rust and managed recovery suites, full-frame direct
 and SDK thermal/cancellation captures, and installed NINA acceptance on ASI6200MM
@@ -38,8 +40,8 @@ supervisor restart. The CAA driver reported no disconnect in that pass; a separa
 injected-disconnect pass verified its reconnection. Physical Linux USB recovery
 and clean-machine/LAN environment checks remain unvalidated locally.
 
-Use `Regain-0.6.1.3.zip` for NINA or
-`Regain-ASCOM-0.6.1.3-win-x64-setup.exe` for Windows ASCOM and Alpaca.
+Use `Regain-0.6.1.4.zip` for NINA or
+`Regain-ASCOM-0.6.1.4-win-x64-setup.exe` for Windows ASCOM and Alpaca.
 Rust workspace crates use version `0.6.1`. Regain Hub remains a preview; direct USB
 support remains model-specific. See
-[supported hardware](https://github.com/pulsarfab/regain/blob/v0.6.1.3/README.md#supported-hardware).
+[supported hardware](https://github.com/pulsarfab/regain/blob/v0.6.1.4/README.md#supported-hardware).

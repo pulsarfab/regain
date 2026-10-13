@@ -29,6 +29,87 @@ def require(condition, message):
         raise RuntimeError(message)
 
 
+def windows_token_diagnostics():
+    """Keep UAC elevation flags separate from effective admin/integrity rights."""
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    advapi = ctypes.WinDLL("advapi32", use_last_error=True)
+    user = ctypes.WinDLL("user32", use_last_error=True)
+    kernel.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel.GetCurrentThreadId.restype = wintypes.DWORD
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    advapi.OpenProcessToken.argtypes = [wintypes.HANDLE, wintypes.DWORD,
+                                        ctypes.POINTER(wintypes.HANDLE)]
+    advapi.GetTokenInformation.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p,
+                                           wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
+    advapi.GetSidSubAuthorityCount.argtypes = [ctypes.c_void_p]
+    advapi.GetSidSubAuthorityCount.restype = ctypes.POINTER(ctypes.c_ubyte)
+    advapi.GetSidSubAuthority.argtypes = [ctypes.c_void_p, wintypes.DWORD]
+    advapi.GetSidSubAuthority.restype = ctypes.POINTER(wintypes.DWORD)
+    user.GetProcessWindowStation.restype = wintypes.HANDLE
+    user.GetThreadDesktop.argtypes = [wintypes.DWORD]
+    user.GetThreadDesktop.restype = wintypes.HANDLE
+    user.GetUserObjectInformationW.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p,
+                                              wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
+
+    def checked(success, operation):
+        if not success:
+            raise ctypes.WinError(ctypes.get_last_error(), operation)
+
+    def object_name(handle):
+        size = wintypes.DWORD()
+        user.GetUserObjectInformationW(handle, 2, None, 0, ctypes.byref(size))
+        require(0 < size.value <= 65536, "Invalid test GUI object name size")
+        text = ctypes.create_unicode_buffer((size.value + ctypes.sizeof(wintypes.WCHAR) - 1)
+                                           // ctypes.sizeof(wintypes.WCHAR))
+        checked(user.GetUserObjectInformationW(handle, 2, text, ctypes.sizeof(text),
+                                               ctypes.byref(size)), "Read test GUI object name")
+        return text.value
+
+    token = wintypes.HANDLE()
+    try:
+        checked(advapi.OpenProcessToken(kernel.GetCurrentProcess(), 8, ctypes.byref(token)),
+                "Open test diagnostics token")
+
+        scalar_sizes = {}
+
+        def number(token_class, allowed_sizes=(4,)):
+            size = wintypes.DWORD()
+            advapi.GetTokenInformation(token, token_class, None, 0, ctypes.byref(size))
+            require(size.value in allowed_sizes,
+                    f"Invalid test token class {token_class} scalar size {size.value}")
+            expected_size = size.value
+            value = ctypes.create_string_buffer(expected_size)
+            checked(advapi.GetTokenInformation(token, token_class, value,
+                                               len(value), ctypes.byref(size)),
+                    "Read test token diagnostics")
+            require(size.value == expected_size, "Test token scalar size changed during query")
+            scalar_sizes[str(token_class)] = expected_size
+            return int.from_bytes(value.raw, "little")
+
+        size = wintypes.DWORD()
+        advapi.GetTokenInformation(token, 25, None, 0, ctypes.byref(size))
+        require(0 < size.value <= 65536, "Invalid test token integrity size")
+        label = ctypes.create_string_buffer(size.value)
+        checked(advapi.GetTokenInformation(token, 25, label, len(label), ctypes.byref(size)),
+                "Read test token integrity")
+        sid = ctypes.cast(label, ctypes.POINTER(ctypes.c_void_p))[0]
+        count = advapi.GetSidSubAuthorityCount(sid)[0]
+        require(count > 0, "Missing test token integrity RID")
+        return dict(administrator=bool(ctypes.windll.shell32.IsUserAnAdmin()),
+                    tokenElevation=bool(number(20)), tokenElevationType=number(18),
+                    # Some Windows builds return BOOLEAN rather than DWORD for
+                    # TokenHasRestrictions. Query its exact bounded shape first.
+                    tokenHasRestrictions=bool(number(21, (1, 4))),
+                    integrityRid=advapi.GetSidSubAuthority(sid, count - 1)[0],
+                    sessionId=number(12),
+                    windowStation=object_name(user.GetProcessWindowStation()),
+                    desktop=object_name(user.GetThreadDesktop(kernel.GetCurrentThreadId())),
+                    tokenInformationBytes=dict(scalar_sizes))
+    finally:
+        if token:
+            kernel.CloseHandle(token)
+
+
 @contextmanager
 def unelevated_pipe_squatter():
     """Own one inert pipe; prove the client authenticates the kernel server token.
@@ -318,7 +399,7 @@ def restricted_child(arguments):
                 kernel.LocalFree(sid)
 
 
-def process_checks(helper, evidence):
+def process_checks(helper, evidence, diagnostics):
     # A unique, deliberately nonexistent USB instance prevents any physical
     # binding even if a helper appears between the absent-status checks.
     target = dict(vendor=0x03c3, product=0x620b, serial="1234567890abcdef",
@@ -331,15 +412,40 @@ def process_checks(helper, evidence):
     encoded = token(target)
     rows = []
     digest = hashlib.sha256(helper.read_bytes()).hexdigest()
+    print("USB helper test token/desktop: " + json.dumps(diagnostics, sort_keys=True), flush=True)
 
-    def rejected(label, arguments, expected=None):
+    def command(label, arguments):
         require(hashlib.sha256(helper.read_bytes()).hexdigest() == digest,
                 "USB helper executable changed during process checks")
         started = time.monotonic()
-        result = subprocess.run([str(helper), "usb", *arguments], capture_output=True,
-                                text=True, encoding="utf-8", errors="replace",
-                                timeout=TIMEOUT_SECONDS, creationflags=subprocess.CREATE_NO_WINDOW)
+        print(f"USB helper case {len(rows) + 1}: {label}; launching (deadline {TIMEOUT_SECONDS}s)",
+              flush=True)
+        process = subprocess.Popen([str(helper), "usb", *arguments], stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, text=True, encoding="utf-8",
+                                   errors="replace", creationflags=subprocess.CREATE_NO_WINDOW)
+        launched = time.monotonic()
+        try:
+            stdout, stderr = process.communicate(timeout=TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired as error:
+            process.kill()
+            try:
+                stdout, stderr = process.communicate(timeout=2)
+            except subprocess.TimeoutExpired:
+                stdout, stderr = "", "Owned process did not drain after termination"
+            elapsed = time.monotonic() - started
+            print(f"USB helper timeout: case={label!r}, pid={process.pid}, "
+                  f"launchMs={(launched - started) * 1000:.3f}, elapsedMs={elapsed * 1000:.3f}, "
+                  f"stdout={stdout[-4096:]!r}, stderr={stderr[-4096:]!r}", flush=True)
+            raise RuntimeError(f"{label}: helper process exceeded {TIMEOUT_SECONDS}s; "
+                               "see token/desktop and command timing diagnostics") from error
         elapsed = time.monotonic() - started
+        print(f"USB helper completed: case={label!r}, pid={process.pid}, "
+              f"launchMs={(launched - started) * 1000:.3f}, elapsedMs={elapsed * 1000:.3f}, "
+              f"exit={process.returncode}", flush=True)
+        return subprocess.CompletedProcess(process.args, process.returncode, stdout, stderr), elapsed
+
+    def rejected(label, arguments, expected=None):
+        result, elapsed = command(label, arguments)
         require(result.returncode != 0, f"{label}: unsafe/unexpected success")
         require(bool(result.stderr.strip()), f"{label}: missing actionable error")
         if expected is not None:
@@ -349,13 +455,7 @@ def process_checks(helper, evidence):
                          returnCode=result.returncode, error=result.stderr.strip()))
 
     def absent_response(label, arguments, expected):
-        require(hashlib.sha256(helper.read_bytes()).hexdigest() == digest,
-                "USB helper executable changed during process checks")
-        started = time.monotonic()
-        result = subprocess.run([str(helper), "usb", *arguments], capture_output=True,
-                                text=True, encoding="utf-8", errors="replace",
-                                timeout=TIMEOUT_SECONDS, creationflags=subprocess.CREATE_NO_WINDOW)
-        elapsed = time.monotonic() - started
+        result, elapsed = command(label, arguments)
         require(result.returncode == 0, f"{label}: absent status failed: {result.stderr!r}")
         require(not result.stderr.strip(), f"{label}: unexpected status error")
         value = json.loads(result.stdout)
@@ -415,7 +515,7 @@ def process_checks(helper, evidence):
     absent_response("helper still absent", ["helper", "status"], missing_status)
     report = dict(passed=True, administrator=False, physicalDeviceUsed=False,
                   helperPrepared=False, helperSha256=digest,
-                  timeoutSecondsPerProcess=TIMEOUT_SECONDS, cases=rows)
+                  timeoutSecondsPerProcess=TIMEOUT_SECONDS, tokenDiagnostics=diagnostics, cases=rows)
     if evidence is not None:
         evidence.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(f"USB helper: {len(rows)} bounded non-admin protocol/rejection checks passed; "
@@ -437,7 +537,11 @@ def main():
     if elevated:
         restricted_child(sys.argv[1:])
     else:
-        process_checks(helper, options.evidence)
+        diagnostics = windows_token_diagnostics()
+        if options.require_unelevated:
+            require(diagnostics["integrityRid"] == 8192, "Test child did not have medium integrity")
+            require(diagnostics["tokenHasRestrictions"], "Test child lost restricted-token coverage")
+        process_checks(helper, options.evidence, diagnostics)
 
 
 if __name__ == "__main__":

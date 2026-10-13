@@ -27,6 +27,12 @@ const MISSING: &str = "USB reset helper is not prepared; explicitly prepare this
 // rewrite its own pipe ACL and manufacture a second instance.
 const CLIENT_ACCESS: u32 = 0x0012_008b;
 const CALL_SECONDS: u64 = 5;
+// Windows SDK group attributes and mandatory label RID. Keep token inspection
+// query-only: an ordinary frontend must not need permission to duplicate the
+// elevated helper's token in order to authenticate it.
+const SE_GROUP_ENABLED: u32 = 0x0000_0004;
+const SE_GROUP_USE_FOR_DENY_ONLY: u32 = 0x0000_0010;
+const SECURITY_MANDATORY_HIGH_RID: u32 = 0x0000_3000;
 
 #[derive(Debug)]
 struct Identity {
@@ -63,6 +69,81 @@ fn token_value<T: Copy>(token: HANDLE, class: TOKEN_INFORMATION_CLASS) -> Result
             os_error()
         );
         Ok(value)
+    }
+}
+fn token_buffer(
+    token: HANDLE,
+    class: TOKEN_INFORMATION_CLASS,
+    minimum: usize,
+) -> Result<(Vec<u64>, usize)> {
+    unsafe {
+        let mut required = 0;
+        GetTokenInformation(token, class, null_mut(), 0, &mut required);
+        ensure!(
+            (minimum..=65536).contains(&(required as usize)),
+            "Invalid USB helper token information size"
+        );
+        let mut storage = vec![0u64; (required as usize).div_ceil(8)];
+        let mut returned = 0;
+        ensure!(
+            GetTokenInformation(
+                token,
+                class,
+                storage.as_mut_ptr().cast(),
+                required,
+                &mut returned
+            ) != 0
+                && returned == required,
+            "Read USB helper token authority: {}",
+            os_error()
+        );
+        Ok((storage, returned as usize))
+    }
+}
+fn token_elevated_administrator(token: HANDLE) -> Result<bool> {
+    // CreateRestrictedToken can retain the source token's elevation flag after
+    // administrator membership is disabled and integrity is lowered. Neither
+    // such a pipe server nor an approval/bootstrap caller has elevated authority.
+    if token_value::<TOKEN_ELEVATION>(token, TokenElevation)?.TokenIsElevated == 0 {
+        return Ok(false);
+    }
+    let (integrity, _) = token_buffer(
+        token,
+        TokenIntegrityLevel,
+        size_of::<TOKEN_MANDATORY_LABEL>(),
+    )?;
+    unsafe {
+        let label = &*integrity.as_ptr().cast::<TOKEN_MANDATORY_LABEL>();
+        let sid = label.Label.Sid;
+        ensure!(
+            !sid.is_null() && IsValidSid(sid) != 0,
+            "Invalid USB helper integrity SID"
+        );
+        let count = *GetSidSubAuthorityCount(sid);
+        ensure!(count > 0, "Missing USB helper integrity level");
+        if *GetSidSubAuthority(sid, u32::from(count) - 1) < SECURITY_MANDATORY_HIGH_RID {
+            return Ok(false);
+        }
+        let offset = std::mem::offset_of!(TOKEN_GROUPS, Groups);
+        let (groups, length) = token_buffer(token, TokenGroups, size_of::<TOKEN_GROUPS>())?;
+        let count = (*groups.as_ptr().cast::<TOKEN_GROUPS>()).GroupCount as usize;
+        ensure!(
+            count <= (length - offset) / size_of::<SID_AND_ATTRIBUTES>(),
+            "Invalid USB helper token group count"
+        );
+        let groups = std::slice::from_raw_parts(
+            groups
+                .as_ptr()
+                .cast::<u8>()
+                .add(offset)
+                .cast::<SID_AND_ATTRIBUTES>(),
+            count,
+        );
+        Ok(groups.iter().any(|group| {
+            group.Attributes & SE_GROUP_ENABLED != 0
+                && group.Attributes & SE_GROUP_USE_FOR_DENY_ONLY == 0
+                && IsWellKnownSid(group.Sid, WinBuiltinAdministratorsSid) != 0
+        }))
     }
 }
 fn identity(process: HANDLE) -> Result<Identity> {
@@ -107,8 +188,7 @@ fn identity(process: HANDLE) -> Result<Identity> {
         LocalFree(sid.cast());
         let sid = sid_text.context("Invalid Windows user SID")?;
         let session = token_value::<u32>(token.0, TokenSessionId)?;
-        let elevated =
-            token_value::<TOKEN_ELEVATION>(token.0, TokenElevation)?.TokenIsElevated != 0;
+        let elevated = token_elevated_administrator(token.0)?;
         Ok(Identity {
             sid,
             session,
@@ -1043,6 +1123,150 @@ mod tests {
                 0
             );
             LocalFree(security);
+        }
+    }
+    #[test]
+    fn restricted_tokens_cannot_authorize_helper_servers_or_approvals() {
+        unsafe {
+            let mut original = null_mut();
+            assert_ne!(
+                OpenProcessToken(
+                    GetCurrentProcess(),
+                    TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ADJUST_DEFAULT,
+                    &mut original
+                ),
+                0,
+                "Open token for restriction fixture: {}",
+                os_error()
+            );
+            let original = Handle(original);
+            let mut administrator = [0u64; 9];
+            let mut size = SECURITY_MAX_SID_SIZE;
+            assert_ne!(
+                CreateWellKnownSid(
+                    WinBuiltinAdministratorsSid,
+                    null_mut(),
+                    administrator.as_mut_ptr().cast(),
+                    &mut size
+                ),
+                0
+            );
+            let disabled = SID_AND_ATTRIBUTES {
+                Sid: administrator.as_mut_ptr().cast(),
+                Attributes: 0,
+            };
+            // Independently verify the genuine source token, including the
+            // elevated hosted CI runner. CheckTokenMembership needs an
+            // impersonation token; only this fixture duplicates its own token.
+            let mut membership_token = null_mut();
+            assert_ne!(
+                DuplicateToken(original.0, SecurityIdentification, &mut membership_token),
+                0,
+                "Duplicate fixture token for membership check: {}",
+                os_error()
+            );
+            let membership_token = Handle(membership_token);
+            let mut administrator_enabled = 0;
+            assert_ne!(
+                CheckTokenMembership(membership_token.0, disabled.Sid, &mut administrator_enabled),
+                0,
+                "Check source administrator membership: {}",
+                os_error()
+            );
+            let mut integrity = [0u64; 16];
+            let mut returned = 0;
+            assert_ne!(
+                GetTokenInformation(
+                    original.0,
+                    TokenIntegrityLevel,
+                    integrity.as_mut_ptr().cast(),
+                    std::mem::size_of_val(&integrity) as u32,
+                    &mut returned
+                ),
+                0,
+                "Read source integrity independently: {}",
+                os_error()
+            );
+            assert!(
+                (size_of::<TOKEN_MANDATORY_LABEL>()..=std::mem::size_of_val(&integrity))
+                    .contains(&(returned as usize))
+            );
+            let sid = (*integrity.as_ptr().cast::<TOKEN_MANDATORY_LABEL>())
+                .Label
+                .Sid;
+            assert_ne!(IsValidSid(sid), 0);
+            let count = *GetSidSubAuthorityCount(sid);
+            assert!(count > 0);
+            let high_integrity =
+                *GetSidSubAuthority(sid, u32::from(count) - 1) >= SECURITY_MANDATORY_HIGH_RID;
+            let genuinely_elevated = administrator_enabled != 0
+                && high_integrity
+                && token_value::<TOKEN_ELEVATION>(original.0, TokenElevation)
+                    .unwrap()
+                    .TokenIsElevated
+                    != 0;
+            assert_eq!(
+                token_elevated_administrator(original.0).unwrap(),
+                genuinely_elevated,
+                "Genuine elevated administrator must be accepted; ordinary callers must be rejected"
+            );
+            for disable_administrator in [true, false] {
+                let mut restricted = null_mut();
+                assert_ne!(
+                    CreateRestrictedToken(
+                        original.0,
+                        DISABLE_MAX_PRIVILEGE,
+                        u32::from(disable_administrator),
+                        if disable_administrator {
+                            &disabled
+                        } else {
+                            null()
+                        },
+                        0,
+                        null(),
+                        0,
+                        null(),
+                        &mut restricted,
+                    ),
+                    0,
+                    "Create token restriction fixture: {}",
+                    os_error()
+                );
+                let restricted = Handle(restricted);
+                if !disable_administrator {
+                    // Preserve group membership and independently prove that a
+                    // medium-integrity copy cannot masquerade as the helper.
+                    let mut medium = [0u64; 9];
+                    let mut size = SECURITY_MAX_SID_SIZE;
+                    assert_ne!(
+                        CreateWellKnownSid(
+                            WinMediumLabelSid,
+                            null_mut(),
+                            medium.as_mut_ptr().cast(),
+                            &mut size
+                        ),
+                        0
+                    );
+                    let label = TOKEN_MANDATORY_LABEL {
+                        Label: SID_AND_ATTRIBUTES {
+                            Sid: medium.as_mut_ptr().cast(),
+                            Attributes: 0x20, // SE_GROUP_INTEGRITY.
+                        },
+                    };
+                    assert_ne!(
+                        SetTokenInformation(
+                            restricted.0,
+                            TokenIntegrityLevel,
+                            (&label as *const TOKEN_MANDATORY_LABEL).cast(),
+                            size_of::<TOKEN_MANDATORY_LABEL>() as u32 + size,
+                        ),
+                        0,
+                        "Lower fixture integrity: {}",
+                        os_error()
+                    );
+                }
+                assert!(!token_elevated_administrator(restricted.0).unwrap());
+            }
         }
     }
 }
