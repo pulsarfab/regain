@@ -96,6 +96,12 @@ including nested `details` and fields it does not recognize. Valid structured
 records are not subject to the old 8 KiB truncation. Malformed or legacy
 unstructured stderr remains visible, bounded to 8 KiB.
 
+Worker retirement shares its existing three-second shutdown deadline between
+process exit and draining queued stderr. This preserves failure records already
+written by the worker before replacement. An unavailable or blocked log sink
+cannot extend that deadline. Managed `ipc.command.failed` records use warning
+severity and remain visible when transfer logging is off.
+
 | Field | Meaning |
 | --- | --- |
 | `event`, `message`, `level` | Record type, readable description, and original producer severity. Even structured `debug` records reach NINA INFO. |

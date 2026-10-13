@@ -18,6 +18,8 @@ public sealed class HostClient : IDisposable
     private readonly Process process;
     private readonly ProcessJob? job;
     private readonly HostClientDiagnostics diagnostics;
+    private readonly TaskCompletionSource stderrCompleted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    [ThreadStatic] private static HostClient? stderrCallbackOwner;
     private readonly SemaphoreSlim gate = new(1);
     private long nextId;
     private int disposed;
@@ -73,9 +75,13 @@ public sealed class HostClient : IDisposable
         catch { process.Kill(true); process.Dispose(); throw; }
         diagnostics = new(log, direct ? "direct" : "sdk", process.Id, supervised);
         process.ErrorDataReceived += (_, e) => {
+            if (e.Data is null) { stderrCompleted.TrySetResult(); return; }
+            var previous = stderrCallbackOwner;
+            stderrCallbackOwner = this;
             // An exception on this asynchronous callback could otherwise take down NINA.
-            try { if (e.Data is not null) ReceiveStandardError(e.Data); }
+            try { ReceiveStandardError(e.Data); }
             catch { /* Diagnostics must not change command/capture results. */ }
+            finally { stderrCallbackOwner = previous; }
         };
         process.BeginErrorReadLine();
     }
@@ -172,11 +178,22 @@ public sealed class HostClient : IDisposable
             return;
         try
         {
-            if (!process.HasExited)
+            // Timed WaitForExit does not wait for asynchronous stderr callbacks.
+            // A failed worker already wrote its fault evidence before its reply;
+            // retain the reader until EOF before disposing its queued records.
+            // Share the existing shutdown allowance instead of extending it.
+            var shutdown = Stopwatch.StartNew();
+            int Remaining() => (int)Math.Max(0, 3000 - shutdown.ElapsedMilliseconds);
+            bool exited = process.HasExited;
+            if (!exited)
             {
                 process.Kill(entireProcessTree: true);
-                process.WaitForExit(3000);
+                exited = process.WaitForExit(Remaining());
             }
+            // A log sink may itself disconnect. Waiting for its own callback's
+            // EOF would stall that callback and prevent the reader from draining.
+            if (exited && !ReferenceEquals(stderrCallbackOwner, this))
+                stderrCompleted.Task.Wait(Remaining());
         }
         catch (InvalidOperationException) { }
         finally { job?.Dispose(); process.Dispose(); }
