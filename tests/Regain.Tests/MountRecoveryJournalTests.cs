@@ -22,4 +22,20 @@ public sealed class MountRecoveryJournalTests
             Assert.False(journal.Required(id));
         } finally { Directory.Delete(directory, recursive: true); }
     }
+    [Theory] [InlineData(false)] [InlineData(true)]
+    public void StopOnlyCleanupLocksAndPreservesNewOrExistingFence(bool existing)
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "regain-abort-" + Guid.NewGuid());
+        var journal = new MountRecoveryJournal(directory); const string id = "Regain.Mount/ASCOM.Stop.Telescope";
+        try {
+            if (existing) journal.Begin(id).Dispose();
+            using (var abort = journal.HoldForAbort(id)) {
+                var other = new MountRecoveryJournal(directory);
+                Assert.True(other.Required(id)); Assert.False(other.ClearAfterInspection(id));
+                Assert.Throws<IOException>(() => other.Begin(id));
+                Assert.Throws<IOException>(() => other.HoldForAbort(id));
+            }
+            Assert.True(journal.Required(id)); Assert.True(journal.ClearAfterInspection(id));
+        } finally { Directory.Delete(directory, recursive: true); }
+    }
 }

@@ -5,12 +5,17 @@ public sealed record MountRecoveryOptions
     public double LostTrackingSeconds { get; init; } = 5;
     public double MotionTimeoutSeconds { get; init; } = 180;
     public double CoordinateJumpDegrees { get; init; } = 5;
+    public bool GreenSwampAutoHome { get; init; } = true;
+    public int GreenSwampSearchDegrees { get; init; } = 100;
+    public int GreenSwampDeclinationOffsetDegrees { get; init; }
     public void Validate()
     {
         if (!double.IsFinite(LostTrackingSeconds) || LostTrackingSeconds is < 1 or > 60 ||
             !double.IsFinite(MotionTimeoutSeconds) || MotionTimeoutSeconds is < 10 or > 900 ||
             !double.IsFinite(CoordinateJumpDegrees) || CoordinateJumpDegrees is <= 0 or > 90)
             throw new ArgumentOutOfRangeException(nameof(MountRecoveryOptions), "Use 1–60 seconds for detection, 10–900 seconds for recovery, and a 0–90 degree jump threshold.");
+        if (GreenSwampSearchDegrees is < 20 or > 179 || GreenSwampDeclinationOffsetDegrees is < -90 or > 90)
+            throw new ArgumentOutOfRangeException(nameof(MountRecoveryOptions), "Green Swamp AutoHome requires a 20–179 degree search limit and a −90–90 degree declination offset.");
     }
 }
 

@@ -33,6 +33,12 @@ tracking and settle guiding. Failed recovery stops the sequence and requires
 inspection before another attempt. A durable recovery journal prevents an older
 sequence or a NINA restart from replaying an uncertain move. Available from
 v0.6.1.6; physical AM7 and live-guiding acceptance remain outstanding.
+Version 0.6.1.7 adds sensor AutoHome through Green Swamp Server's existing server
+API, with configurable search limits and no coordinate-home fallback. Recovery
+failures abort motion, disable tracking and stop the sequence; Regain never parks
+as a failure response. The failure latch survives wrapper recreation and blocks
+further movement until inspection is cleared. GSS 1.2.2.7's unreadable completion
+status prevents automatic target return; see the setup guide for its limits.
 [Mount recovery setup and limits](docs/ascom-mount-recovery.md).
 
 ### Save an exposure after a failed download

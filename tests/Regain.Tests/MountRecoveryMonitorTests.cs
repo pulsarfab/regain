@@ -60,4 +60,14 @@ public sealed class MountRecoveryMonitorTests
     [Theory] [InlineData(0,180,5)] [InlineData(5,0,5)] [InlineData(5,180,0)] [InlineData(double.NaN,180,5)]
     public void InvalidConfigurationCannotAuthorizeRecovery(double loss, double timeout, double jump) =>
         Assert.Throws<ArgumentOutOfRangeException>(() => new MountRecoveryOptions { LostTrackingSeconds = loss, MotionTimeoutSeconds = timeout, CoordinateJumpDegrees = jump }.Validate());
+    [Theory] [InlineData(19,0)] [InlineData(180,0)] [InlineData(100,-91)] [InlineData(100,91)]
+    public void InvalidSensorHomeLimitsCannotAuthorizeRecovery(int search, int offset) =>
+        Assert.Throws<ArgumentOutOfRangeException>(() => new MountRecoveryOptions { GreenSwampSearchDegrees = search, GreenSwampDeclinationOffsetDegrees = offset }.Validate());
+    [Fact] public void SensorHomeDefaultsAndBoundaryValuesAreValid()
+    {
+        var options = new MountRecoveryOptions(); options.Validate();
+        Assert.True(options.GreenSwampAutoHome); Assert.Equal(100, options.GreenSwampSearchDegrees); Assert.Equal(0, options.GreenSwampDeclinationOffsetDegrees);
+        (options with { GreenSwampSearchDegrees = 20, GreenSwampDeclinationOffsetDegrees = -90 }).Validate();
+        (options with { GreenSwampSearchDegrees = 179, GreenSwampDeclinationOffsetDegrees = 90 }).Validate();
+    }
 }

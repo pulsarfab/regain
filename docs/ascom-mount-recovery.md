@@ -32,6 +32,9 @@ explicitly reached in a target sequence.
 | `LostTrackingSeconds` | 5 seconds | Required duration of unexpected tracking loss, connection failure, invalid position, or an uncommanded coordinate jump. |
 | `CoordinateJumpDegrees` | 5 degrees | Angular jump from the last healthy celestial position. RA wrap and polar geometry use spherical separation. |
 | `MotionTimeoutSeconds` | 180 seconds | Total recovery deadline, including homing, return slew, centering and guiding. Range 10–900 seconds. |
+| `GreenSwampAutoHome` | On | For `ASCOM.GS.Sky.Telescope`, use GSS sensor AutoHome instead of its coordinate-only ASCOM FindHome. Other drivers are unaffected. |
+| `GreenSwampSearchDegrees` | 100 degrees | Maximum GSS sensor search, 20–179 degrees. A failed search is never extended or retried automatically. |
+| `GreenSwampDeclinationOffsetDegrees` | 0 degrees | GSS's declination offset for the sensor home, −90–90 degrees; configure for your mounting arrangement. |
 
 An explicit stop-tracking, park, or home command through NINA disarms recovery.
 Commanded slews, flips and manual-axis movement suppress position-jump detection.
@@ -65,12 +68,103 @@ does not enable tracking. Sidereal, lunar, solar, King and finite custom rates
 use the same saved-rate path. Homing must be supported and trustworthy on the
 specific mount; the wrapper does not infer physical position from reset telemetry.
 
+Standard ASCOM recovery refuses a pre-existing `AtHome=true` reading: NINA's
+adapter can log a failed FindHome call and return normally, leaving old home
+telemetry behind. An ambiguous result stops recovery rather than authorizing
+a return slew. The GSS path instead requires its sensor-search start/completion
+and readable error status.
+
+## Green Swamp Server sensor AutoHome
+
+The GSS sensor path and stop-only failure handling are available from v0.6.1.7.
+The basic wrapper in v0.6.1.6 uses standard ASCOM FindHome for every driver.
+
+For the registered **ASCOM.GS.Sky.Telescope** driver, sensor AutoHome is enabled
+by default in the recovery action and trigger. Regain connects to the installed
+**GS.SkyApi** COM interface in the same GSS server. GSS keeps ownership of the
+serial port. Driver identity selects this path; a similar display name does not.
+
+GSS must be connected to a mount with home sensors. Regain stops guiding and
+tracking, confirms both axes stopped, and temporarily disables GSS's processing
+of ASCOM movement commands. It calls `AutoHomeStart(searchDegrees, decOffset)`
+once, observes `IsAutoHomeRunning` start and finish, checks `LastAutoHomeError`,
+and requires both axes stopped, `AtHome` and no slew before restoring ASCOM
+movement and continuing the normal target/centering/guiding recovery.
+
+No sensors, an unavailable API, a rejected start, an incomplete search, uncertain
+home state or a failed API call stops recovery. There is no automatic fallback to
+GSS's ordinary FindHome: that operation only slews to GSS's stored home coordinates
+and cannot reconstruct lost axis position. You can explicitly turn off
+`GreenSwampAutoHome` to use ordinary FindHome when coordinate homing is appropriate.
+
+Cancel from NINA to cancel the entire recovery. Regain calls `AutoHomeStop()` and
+keeps the recovery operation owned until GSS reports homing ended and both axes
+stopped. ASCOM movement remains disabled during that wait. A lost connection or
+blocked COM call can outlive the sequence deadline; the durable inspection fence
+prevents another attempt. The helper never closes GSS or opens its serial port.
+
+GSS 1.2.2.7's `LastAutoHomeError` getter dereferences a null exception after a
+successful start. **Unreadable status is a recovery failure**, including this
+null-reference bug (`E_POINTER` over COM). Regain aborts, disables tracking and
+retains the inspection fence; it never infers success from home coordinates.
+With that GSS version, sensor homing can run, but automatic target return is
+blocked until GSS provides readable completion/error status. GSS also leaves the
+error field empty for a stop requested in its own UI and exposes no independent
+per-axis success result. Use NINA cancellation to stop the entire recovery.
+
+Configure the search and offset for your mount and cable travel. Sensor search
+can move a mount whose original position is unknown, and plate solving happens
+only after homing. Physical GSS sensor-homing acceptance remains required. GSS's
+simulator does not pass this API's SkyWatcher-only `CanHomeSensors` getter, so a
+GSS simulator run cannot certify this sensor path.
+
+Protocol references: [GSS scripting API](https://greenswamp.org/?docs=gs-server-overview%2Fscripting-api),
+[Home versus AutoHome](https://greenswamp.org/?docs=gs-server-overview%2Fmain-tab%2Fbutton-control),
+and inspected upstream commit
+[`03df875`](https://github.com/rmorgan001/GSServer/tree/03df8752eab71856b84ca9f5a5febc28e8de6ed6):
+[`GS.SkyApi/Sky.cs`](https://github.com/rmorgan001/GSServer/blob/03df8752eab71856b84ca9f5a5febc28e8de6ed6/GS.SkyApi/Sky.cs)
+and [`SkyServer.AutoHomeAsync`](https://github.com/rmorgan001/GSServer/blob/03df8752eab71856b84ca9f5a5febc28e8de6ed6/GS.Server/SkyTelescope/SkyServer.cs).
+Regain uses the public COM interface without bundling GSS code or binaries.
+
 ## Failure and cancellation
 
 Recovery has one attempt. Before it starts, the action/trigger persists
 `ReconciliationRequired` in its sequence settings. Only complete success clears
 that fence. Failure or cancellation interrupts the containing sequence, so a
 failed trigger cannot silently fall through to the next exposure.
+
+**Every runtime recovery failure, cancellation or deadline aborts mount motion
+and disables tracking. Regain never parks, unparks, retries homing, returns to
+the target or restarts guiding after failure.** The original mount is stopped
+even if NINA's selected mount or profile changes. Guiding is stopped as well.
+Tracking-off is sent independently of the abort, then repeated after AbortSlew
+returns because some drivers restore tracking during abort. If a recovery command
+finishes late, the stop/tracking-off sequence runs again afterward before ownership
+is released. Failed or fenced action execution also requests a stop instead of
+allowing imaging to continue.
+
+The failed wrapper also rejects further slews, home, park/unpark, manual-axis
+movement, pulse guiding, raw/custom commands and tracking enable until **Allow another recovery after inspecting
+mount…** clears the failure. Its normal telemetry poll commands tracking off
+again if the vendor server re-enables it later. It does not launch another home,
+park or abort from that poll. Clearing inspection leaves tracking off; it does
+not resume imaging or guiding automatically.
+The journal restores this latch when a wrapper is recreated, before it accepts
+commands. Inspection clearance requires the original selected mount, no pending
+operation, a connected driver, tracking off and no reported slew.
+
+For GSS, cleanup requests `AutoHomeStop` and both axis stops through a separate
+connection to the same server. After the homing owner's gate cleanup finishes,
+Regain temporarily enables ASCOM command processing, aborts and sets tracking off
+last; this avoids GSS silently ignoring tracking writes while its gate is closed.
+The previous command-gate state is restored. No serial connection is opened.
+
+The sequence caller waits at most six seconds for cleanup before returning the
+original failure. Actual stop commands keep ownership and the journal lock until
+they finish. NINA logs distinguish **tracking off/no slew reported** from **stop
+or tracking-off NOT confirmed**. A disconnected or unresponsive driver cannot
+prove the hardware stopped; recovery stays fenced for inspection and never tries
+a park as a fallback.
 
 Before moving, recovery also creates a durable per-mount marker under
 `%LOCALAPPDATA%\PulsarFab\Regain\MountRecovery`. It survives a NINA restart or
@@ -107,6 +201,21 @@ home/slew/center/guiding order, failed slews, unsafe transitions, cancellation
 with a vendor operation still pending, deadline expiry during a blocked getter,
 NINA sequence save/reload fencing, and centering without premature guiding.
 These are deterministic fixtures, not AM7 hardware certification.
+
+GSS fixtures cover the full stop-guiding/sensor-home/return/center/guiding path,
+late-bound API members, settings editing and NINA sequence serialization,
+unsupported/busy/disconnected/parked servers, failed and unacknowledged starts,
+missing home confirmation, safety changes and cancellation with homing still
+running. They verify no coordinate-home fallback and retained ownership until
+the real server operation stops. These are API fixtures, not physical sensor tests.
+The development sensor-home/failure-stop change passes the full Core and NINA
+suites (185 and 661 tests; five explicit hardware/COM skips). Its WPF settings test runs
+outside parallel UI collections to avoid WPF schema/type-initialization deadlock.
+Failure fixtures cover homing, return slew, centering, guiding and safety faults,
+AbortSlew re-enabling tracking or throwing, late tracking writes, blocked aborts
+retaining the durable journal lock, invalid/fenced action execution, persistent
+tracking-off enforcement and blocked shutdown parking, and zero park or
+unpark commands throughout the mount recovery suite.
 
 Review regression tests also use NINA's real running sequence container to
 verify interruption cannot await its own action, allow cached tracking telemetry

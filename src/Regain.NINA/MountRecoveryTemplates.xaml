@@ -6,6 +6,7 @@
     <DataTemplate x:Key="MountRecoverySettings">
         <StackPanel>
             <TextBlock Text="Recovery homes the mount, returns to this target, restores tracking, centers and settles guiding. Requires the Regain ASCOM mount provider." TextWrapping="Wrap" />
+            <TextBlock Text="Any recovery failure aborts motion, disables tracking and stops the sequence. No park or retry is attempted; inspection is required." TextWrapping="Wrap" />
             <WrapPanel Margin="0,6">
                 <TextBlock Text="Detect loss after (s)" VerticalAlignment="Center" />
                 <TextBox Width="65" Margin="8,0" Text="{Binding Options.LostTrackingSeconds, ValidatesOnExceptions=True, UpdateSourceTrigger=PropertyChanged}" />
@@ -13,6 +14,14 @@
                 <TextBox Width="65" Margin="8,0" Text="{Binding Options.MotionTimeoutSeconds, ValidatesOnExceptions=True, UpdateSourceTrigger=PropertyChanged}" />
                 <TextBlock Text="Position jump (degrees)" VerticalAlignment="Center" />
                 <TextBox Width="65" Margin="8,0" Text="{Binding Options.CoordinateJumpDegrees, ValidatesOnExceptions=True, UpdateSourceTrigger=PropertyChanged}" />
+            </WrapPanel>
+            <CheckBox Content="Use sensor AutoHome for Green Swamp Server" IsChecked="{Binding Options.GreenSwampAutoHome}" />
+            <TextBlock Text="Uses GSS's existing server and requires home sensors. Other drivers use ASCOM FindHome. No fallback to a coordinate-only home if sensor homing fails." TextWrapping="Wrap" />
+            <WrapPanel Margin="0,6">
+                <TextBlock Text="GSS search limit (degrees)" VerticalAlignment="Center" />
+                <TextBox Width="65" Margin="8,0" Text="{Binding Options.GreenSwampSearchDegrees, ValidatesOnExceptions=True, UpdateSourceTrigger=PropertyChanged}" />
+                <TextBlock Text="GSS Dec offset (degrees)" VerticalAlignment="Center" />
+                <TextBox Width="65" Margin="8,0" Text="{Binding Options.GreenSwampDeclinationOffsetDegrees, ValidatesOnExceptions=True, UpdateSourceTrigger=PropertyChanged}" />
             </WrapPanel>
             <TextBlock Text="{Binding Outcome}" TextWrapping="Wrap" />
             <StackPanel Orientation="Horizontal">
