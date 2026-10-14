@@ -1,5 +1,6 @@
 pub mod accessory;
 pub mod cooling;
+pub mod focuser;
 pub mod model;
 mod process;
 pub mod recovery;

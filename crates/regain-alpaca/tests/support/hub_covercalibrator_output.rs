@@ -646,6 +646,7 @@ async fn panel_native_ofp2_worker_publishes_light_and_cover_through_shared_http_
             device: NativeDevice::Ofp2,
             identity: "SIM-OFP2".into(),
             filter_wheel: None,
+            temperature_compensation: None,
         },
     });
     for number in [4, 17] {

@@ -16,6 +16,7 @@ pub struct Profile {
     pub names: Vec<String>,
     pub focus_offsets: Vec<i32>,
     pub unidirectional: bool,
+    pub temperature_compensation: regain_core::focuser::Options,
 }
 impl Default for Profile {
     fn default() -> Self {
@@ -26,6 +27,7 @@ impl Default for Profile {
             names: vec![],
             focus_offsets: vec![],
             unidirectional: false,
+            temperature_compensation: Default::default(),
         }
     }
 }
@@ -103,6 +105,11 @@ impl Accessory {
         Ok(())
     }
     fn validate(&self, p: &Profile) -> Result<()> {
+        p.temperature_compensation.validate()?;
+        ensure!(
+            !p.temperature_compensation.continuous || matches!(self.kind, "eaf" | "fc3"),
+            error(0x401, "This accessory has no temperature compensation")
+        );
         ensure!(
             p.label
                 .as_ref()
@@ -176,7 +183,7 @@ impl Accessory {
         let mut s = self.state.lock().await;
         self.load(&mut s)?;
         Ok(
-            json!({"profile":s.profile,"kind":self.kind,"slot":self.number,"name":s.profile.label.as_deref().unwrap_or(self.name()),"connected":!s.clients.is_empty(),"simulation":self.simulate}),
+            json!({"profile":s.profile,"kind":self.kind,"slot":self.number,"name":s.profile.label.as_deref().unwrap_or(self.name()),"connected":!s.clients.is_empty(),"simulation":self.simulate,"temperatureCompensationSchema": if matches!(self.kind,"eaf"|"fc3") { regain_core::focuser::schema() } else { Value::Null }}),
         )
     }
     pub async fn configure(&self, value: Value) -> Result<Value> {
@@ -250,6 +257,9 @@ impl Accessory {
                 "USB identity changed"
             );
             let status = worker.request(json!({"command":"status"})).await?;
+            if matches!(self.kind, "eaf" | "fc3") {
+                worker.request(json!({"command":"temperature-compensation","options":s.profile.temperature_compensation})).await?;
+            }
             if self.kind == "efw" {
                 let count = status["slots"]
                     .as_u64()
@@ -382,7 +392,7 @@ impl Accessory {
         if !put && self.kind != "efw" {
             match member {
                 "absolute" => return Ok(json!(true)),
-                "tempcomp" | "tempcompavailable" => return Ok(json!(false)),
+                "tempcomp" | "tempcompavailable" if self.kind == "eta" => return Ok(json!(false)),
                 "stepsize" if self.kind == "eta" => return Ok(json!(1.0)),
                 "stepsize" => return Err(unsupported(member)),
                 _ => (),
@@ -406,6 +416,10 @@ impl Accessory {
                     status["position"].clone()
                 }),
                 "ismoving" if self.kind != "efw" => Ok(status["moving"].clone()),
+                "tempcomp" if matches!(self.kind, "eaf" | "fc3") => Ok(status["temp_comp"].clone()),
+                "tempcompavailable" if matches!(self.kind, "eaf" | "fc3") => {
+                    Ok(status["temp_comp_available"].clone())
+                }
                 "maxstep" | "maxincrement" if self.kind != "efw" => Ok(status["max_step"].clone()),
                 "temperature" if self.kind != "efw" => {
                     if status["temperature_c"].is_null() {
@@ -436,12 +450,39 @@ impl Accessory {
                 error(0x401, "Position is out of range")
             );
             let unidirectional = s.profile.unidirectional;
+            if matches!(self.kind, "eaf" | "fc3") {
+                let check = s
+                    .worker
+                    .as_mut()
+                    .unwrap()
+                    .request(json!({"command":"validate-move","position":position}))
+                    .await?;
+                ensure!(
+                    check["valid"] == true,
+                    error(
+                        0x401,
+                        check["reason"]
+                            .as_str()
+                            .unwrap_or("Invalid focuser approach")
+                    )
+                );
+            }
             s.worker
                 .as_mut()
                 .unwrap()
                 .request(
                     json!({"command":"move","position":position,"unidirectional":unidirectional}),
                 )
+                .await?;
+            return Ok(Value::Null);
+        }
+        if member == "tempcomp" && matches!(self.kind, "eaf" | "fc3") {
+            let enabled = p.boolean("TempComp")?;
+            let worker = s.worker.as_mut().unwrap();
+            let status = worker.request(json!({"command":"status"})).await?;
+            ensure!(status["temp_comp_available"] == true, unsupported(member));
+            worker
+                .request(json!({"command":"temperature-compensation","enabled":enabled}))
                 .await?;
             return Ok(Value::Null);
         }

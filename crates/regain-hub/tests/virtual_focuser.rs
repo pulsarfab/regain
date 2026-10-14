@@ -583,6 +583,7 @@ async fn native_worker_simulation_remains_explicit_through_nested_focuser_output
         device: regain_hub::config::NativeDevice::Eaf,
         identity: "0102030405060709".into(),
         filter_wheel: None,
+        temperature_compensation: None,
     };
     for source in &mut fixture.config.sources {
         source.polling.request_timeout_seconds = 5.0;

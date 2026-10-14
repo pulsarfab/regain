@@ -50,15 +50,28 @@ try {
         while ($device.Position -eq -1) { if ([DateTime]::UtcNow -gt $deadline) { throw 'Wheel return timed out' }; Start-Sleep -Milliseconds 100 }
     } else {
         if ($device.SupportedActions -contains 'Regain.Calibrate') { throw 'Focuser advertised EFW calibration' }
-        if ($device.InterfaceVersion -ne 3 -or !$device.Absolute -or $device.TempCompAvailable) { throw 'Invalid focuser metadata' }
+        if ($device.InterfaceVersion -ne 3 -or !$device.Absolute) { throw 'Invalid focuser metadata' }
+        if (!$Hardware) {
+            if (!$device.TempCompAvailable -or $device.TempComp) { throw 'Invalid initial compensation state' }
+            $device.TempComp = $true
+            if (!$device.TempComp) { throw 'Compensation did not enable' }
+            $rejected = $false
+            try { $device.Move(0) } catch { $rejected = $true; if ($_.Exception.GetBaseException().HResult -ne -2147220479) { throw } }
+            if (!$rejected -or $device.IsMoving -or !$device.TempComp) { throw 'Backlash range preflight violated the ASCOM contract' }
+        }
         $target = if ($initial + 20 -le $device.MaxStep) { $initial + 20 } else { $initial - 20 }
         $device.Move($target)
         $deadline = [DateTime]::UtcNow.AddSeconds(15)
         while ($device.IsMoving) { if ([DateTime]::UtcNow -gt $deadline) { throw 'Focuser timed out' }; Start-Sleep -Milliseconds 100 }
         if ($device.Position -ne $target) { throw 'Focuser position mismatch' }
+        if (!$Hardware) {
+            $state = $device.Action('Regain.Status','') | ConvertFrom-Json
+            if (!$device.TempComp -or $state.temperature_compensation.referencePosition -ne $target) { throw 'Enabled Move did not rebase compensation' }
+        }
         $device.Move($initial)
         while ($device.IsMoving) { if ([DateTime]::UtcNow -gt $deadline) { throw 'Focuser return timed out' }; Start-Sleep -Milliseconds 100 }
         $device.Halt()
+        if (!$Hardware -and $device.TempComp) { throw 'Halt did not stop compensation' }
     }
     if ($device.Position -ne $initial) { throw 'Position was not restored' }
     $identity = $device.Action('Regain.Identity', '') | ConvertFrom-Json

@@ -1570,7 +1570,12 @@ control coordinates hub operations, not other applications or physical changes;
 preflight is not an atomic hardware transaction and does not promise rollback.
 
 Native EAF, FocusCube3 and ETA reuse their production workers. All provide
-absolute coordinates with no automatic temperature compensation. ETA reports
+absolute coordinates. EAF/FocusCube3 support optional
+[continuous temperature compensation](focuser-temperature-compensation.md),
+configured through the native source's `temperatureCompensation` object.
+The worker owns one loop per connection; tracking starts disabled and the
+standard `TempComp` property controls it. Imported ASCOM/Alpaca sources retain
+their own implementation. ETA reports
 one-micrometre coordinates; EAF/FC3 optical step size remains unsupported. ETA's
 unsupported Halt remains unsupported. No hardware or simulation fallback is
 introduced. The runtime now admits native/Alpaca/Windows COM focuser proxies and

@@ -11,6 +11,7 @@ public sealed class AccessorySetupWindow : Window
     private readonly bool externallyOwned;
     private readonly ComboBox devices = new() { MinWidth = 350 };
     private readonly TextBlock summary = new() { TextWrapping = TextWrapping.Wrap };
+    private readonly TextBlock compensationStatus = new() { TextWrapping = TextWrapping.Wrap };
     private readonly TextBlock motionStatus = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 8) };
     private readonly Button moveButton;
     private Button? calibrateButton;
@@ -96,7 +97,13 @@ public sealed class AccessorySetupWindow : Window
             if (session.Kind == "fc3") { settings.Children.Add(Label("Motor speed (even values, 2–400)")); settings.Children.Add(speed); settings.Children.Add(Label("Driver travel range: 0–1,000,000 steps")); }
             else { settings.Children.Add(Label("Maximum travel (steps)")); settings.Children.Add(limit); }
             settings.Children.Add(Button("Apply settings", () => { if (session.Kind == "fc3") session.Request(new { command = "settings", speed = Parse(speed), backlash = Parse(backlash), reverse = reverse.IsChecked == true }); else session.Request(new { command = "settings", beep = beep.IsChecked == true, reverse = reverse.IsChecked == true, backlash = Parse(backlash), max_step = Parse(limit) }); initialized = false; RefreshStatus(); }));
-            settings.Children.Add(new TextBlock { Text = "Set hardware backlash to zero if NINA handles backlash compensation. Temperature compensation is controlled by the imaging application.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 20, 0, 0) });
+            settings.Children.Add(new TextBlock { Text = "Choose one backlash owner: the device, Regain, or NINA. Regain backlash requires zero device backlash; disable NINA backlash when the device or Regain owns it.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 20, 0, 0) });
+            var compensation = Page(tabs, "Temperature");
+            compensation.Children.Add(new TextBlock { Text = "Continuous mode can move during exposures. Disable TempComp during autofocus and calibration. Saving settings leaves tracking off; explicitly enable it after each connection. Halt disables tracking. Explicit moves work with TempComp enabled and establish a new reference after completion.", TextWrapping = TextWrapping.Wrap });
+            compensation.Children.Add(compensationStatus);
+            compensation.Children.Add(Row(Button("Enable TempComp", () => { session.SetTempComp(true); RefreshStatus(); }), Button("Disable TempComp", () => { session.SetTempComp(false); RefreshStatus(); })));
+            var form = new FocuserCompensationForm(compensation, session.Profile.TemperatureCompensation);
+            compensation.Children.Add(Button("Save compensation settings", () => { session.ConfigureTemperatureCompensation(form.Read()); if (session.Connected) RefreshStatus(); }));
         } else {
             motion.Children.Add(Label("Wheel calibration"));
             motion.Children.Add(new TextBlock { Text = "Rotate the wheel to detect all filter slots. Takes about 50 seconds and finishes at slot 1. Wait for completion before disconnecting; the wheel has no halt command.", TextWrapping = TextWrapping.Wrap });
@@ -122,6 +129,10 @@ public sealed class AccessorySetupWindow : Window
     private void RefreshStatus()
     {
         var s = session.Status();
+        if (session.Kind is "eaf" or "fc3") {
+            compensationStatus.Text = s.TempComp ? "TempComp enabled" : s.TempCompAvailable ? "TempComp disabled" : "TempComp unavailable: configure continuous mode and a coefficient, and verify the temperature sensor.";
+            if (s.TemperatureCompensation.ValueKind == System.Text.Json.JsonValueKind.Object && s.TemperatureCompensation.TryGetProperty("lastError", out var error) && error.ValueKind == System.Text.Json.JsonValueKind.String) compensationStatus.Text += ": " + error.GetString();
+        }
         summary.Text = session.Kind == "efw" ? $"{s.Slots} slots  •  {(s.Moving ? "Moving" : "Slot " + (s.Position + 1))}" : $"Position {s.Position:N0} / {s.MaxStep:N0} steps  •  {(s.Moving ? "Moving" : "Idle")}\nTemperature: {(s.Temperature.HasValue ? s.Temperature.Value.ToString("F1") + " °C" : "Unavailable")}";
         if (s.Calibrating) summary.Text = $"Calibrating… {s.DetectedSlots ?? 0} slots detected. Waiting for the wheel to finish.";
         if (session.Kind == "eta") summary.Text = $"Back focus {s.Position} µm  •  {(s.Moving ? "Moving" : "Idle")}\n" + string.Join("   •   ", s.PointsUm.Select((p, i) => $"Point {i + 1}: {p:F1} µm"));

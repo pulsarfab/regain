@@ -73,6 +73,33 @@ public sealed class AccessoryTests : IDisposable
         wheel.Position = 0; wheel.Disconnect(); Assert.False(wheel.Connected);
         });
     }
+    [Theory]
+    [InlineData("eaf", "0102030405060709")]
+    [InlineData("fc3", "00:00:00:00:00:03")]
+    public async Task ContinuousCompensationPreservesMoveHaltAndReconnectContract(string kind, string serial)
+    {
+        Directory.CreateDirectory(directory);
+        File.WriteAllText(Path.Combine(directory, kind + "-nina.json"), System.Text.Json.JsonSerializer.Serialize(new {
+            Serial = serial, TemperatureCompensation = new { continuous = true, stepsPerCelsius = -100, intervalSeconds = 1, backlash = "regain", backlashSteps = 10 }
+        }));
+        using NativeFocuser focuser = kind == "eaf" ? new EafFocuser() : new FocusCubeFocuser();
+        Assert.True(await focuser.Connect(CancellationToken.None));
+        Assert.True(focuser.TempCompAvailable); Assert.False(focuser.TempComp);
+        focuser.TempComp = true; Assert.True(focuser.TempComp);
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => focuser.Move(0, CancellationToken.None, 0));
+        Assert.False(focuser.IsMoving); Assert.True(focuser.TempComp);
+        int target = focuser.Position + 50;
+        await focuser.Move(target, CancellationToken.None, 0);
+        Assert.False(focuser.IsMoving); Assert.Equal(target, focuser.Position); Assert.True(focuser.TempComp);
+        using (var state = System.Text.Json.JsonDocument.Parse(focuser.Action("Regain.Status", ""))) {
+            Assert.Equal(target, state.RootElement.GetProperty("temperature_compensation").GetProperty("referencePosition").GetInt32());
+        }
+        focuser.Halt(); Assert.False(focuser.TempComp);
+        focuser.TempComp = true;
+        focuser.Disconnect();
+        Assert.True(await focuser.Connect(CancellationToken.None));
+        Assert.False(focuser.TempComp); // configuration persists; autonomous motion permission does not
+    }
     [Fact]
     public async Task FocusCubeMovesCancelsAndPreservesItsOwnProfile()
     {
@@ -112,6 +139,8 @@ public sealed class AccessoryTests : IDisposable
         using var eta = new EtaFocuser();
         Assert.True(await eta.Connect(CancellationToken.None));
         Assert.Equal(1.0, eta.StepSize); Assert.Equal(1200, eta.MaxStep);
+        Assert.False(eta.TempCompAvailable); Assert.False(eta.TempComp);
+        Assert.Throws<NotSupportedException>(() => eta.TempComp = false);
         await eta.Move(500, CancellationToken.None, 0);
         Assert.Equal(500, eta.Position);
         using (var state = System.Text.Json.JsonDocument.Parse(eta.Action("Regain.Status", "")))

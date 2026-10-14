@@ -63,6 +63,11 @@ def main():
                 choices = web(setup+'/discover', {})
                 profile['serial'] = choices[0]['identity']['serial'] if slot != 2 else '11:22:33:44:55:66'
                 profile['label'] = f'My {kind} {slot}'
+                if kind in ('eaf', 'fc3'):
+                    contract = json.loads((Path(__file__).resolve().parent.parent/'contracts/focuser-compensation.json').read_text())
+                    assert web(setup)['temperatureCompensationSchema'] == contract
+                    profile['temperatureCompensation'] = {'continuous':True, 'stepsPerCelsius':-100, 'intervalSeconds':1, 'backlash':'regain', 'backlashSteps':10}
+                    web(setup, dict(profile, temperatureCompensation={'typo':True}), expected=400)
                 web(setup, profile)
                 profiles.append(profile)
                 assert api(slot, 'name') == profile['label']
@@ -80,8 +85,31 @@ def main():
             for slot in [0, 1, 3]: api(slot, 'connected', {'Connected':True})
             # Shared clients belong to one slot only, even for two slots of the same model.
             api(1, 'connected', {'Connected':True}, client=11)
+            assert not api(0, 'tempcompavailable') and not api(0, 'tempcomp')
+            api(0, 'tempcomp', {'TempComp':False}, error=0x400)
+            for slot in (1, 3):
+                assert api(slot, 'tempcompavailable') and not api(slot, 'tempcomp')
+                api(slot, 'tempcomp', {'TempComp':True})
+                before = api(slot, 'position')
+                api(slot, 'move', {'Position':0}, error=0x401) # valid coordinate, invalid backlash approach
+                assert api(slot, 'position') == before and not api(slot, 'ismoving')
+                target = api(slot, 'position')+20
+                api(slot, 'move', {'Position':target})
+                # An idempotent enable during the move must not interrupt it.
+                api(slot, 'tempcomp', {'TempComp':True})
+                deadline = time.monotonic()+10
+                while api(slot, 'ismoving'):
+                    assert time.monotonic() < deadline
+                    time.sleep(.05)
+                assert api(slot, 'position') == target and api(slot, 'tempcomp')
+                state = json.loads(api(slot, 'action', {'Action':'Regain.Status','Parameters':''}))
+                assert state['temperature_compensation']['referencePosition'] == target
+                api(slot, 'halt', {})
+                assert not api(slot, 'tempcomp')
+                api(slot, 'tempcomp', {'TempComp':True})
             api(1, 'connected', {'Connected':False})
             assert api(1, 'connected', client=11)
+            assert api(1, 'tempcomp', client=11)
             assert not api(2, 'connected', client=11)
             api(2, 'position', client=11, error=0x407)
             web('/setup/api/focusers/1', profiles[1], expected=400)
@@ -92,6 +120,7 @@ def main():
             web('/setup/api/focusers/1', cleared)
             web('/setup/api/focusers/2', duplicate)
             api(2, 'connected', {'Connected':True})
+            assert not api(2, 'tempcomp') # settings persist, enabled never survives a worker restart
             position = api(2, 'position')
             api(2, 'move', {'Position':position+10})
             deadline = time.monotonic()+10
@@ -114,7 +143,7 @@ def main():
             rows = web('/management/v1/configureddevices')['Value']
             assert [r['DeviceNumber'] for r in rows] == [0, 2, 3]
             assert web('/setup/api/focusers', {'kind':'fc3'})['slot'] == 4
-            print('Dynamic focusers: repeated models, stable IDs, restart, client isolation, duplicate guards and slot reassignment passed')
+            print('Dynamic focusers: stable IDs, shared clients, optional continuous TempComp, enabled moves with backlash/rebase, Halt and reconnect passed')
         except BaseException:
             log.flush(); log.seek(0); print(log.read().decode(errors='replace'))
             raise

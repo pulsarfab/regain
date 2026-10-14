@@ -193,6 +193,7 @@ fn native_entry(
             device,
             identity: serial.to_ascii_lowercase(),
             filter_wheel: None,
+            temperature_compensation: None,
             camera,
         },
         registered_class: None,
