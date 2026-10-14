@@ -1,49 +1,40 @@
-# PulsarFab regain 0.6.1.5
+# PulsarFab regain 0.6.1.6
 
-Recover camera connections before an exposure starts, prepare Windows USB resets
-before the night, and reconnect affected NINA peripherals before imaging resumes.
+Recover an ASCOM mount that unexpectedly stops tracking through NINA, using your
+existing installed mount driver and NINA's normal coordinate and centering paths.
 
-- **Automatic USB reset** is an optional shared NINA and native ASCOM setup
-  toggle. Approve the selected camera once before imaging; the elevated helper
-  survives camera worker, supervisor and application restarts for the Windows
-  session. Automatic recovery never opens an elevation prompt. Turning the option
-  off immediately removes that camera's approval; the last approval stops the
-  helper. Windows Alpaca uses the same helper through the device CLI.
-- Helper authentication checks administrator membership and integrity as well as
-  Windows' elevation flag, rejecting restricted processes before protocol I/O.
-- Worker retirement drains queued failure diagnostics within the existing
-  shutdown deadline; managed command failures retain warning severity.
-- **Pre-exposure reconnect attempts** bounds connection and settings restoration
-  before the first exposure start, including long exposures. This does not permit
-  replacing a long exposure or replaying a setting whose acknowledgement was lost.
-  Telemetry retains finite last readings while capture owns reconnection.
-- **NINA peripheral recovery** observes devices that were connected before a
-  camera USB reset, then reconnects affected selections through NINA. Replacement
-  captures wait for the observation/reconnection pass and matching reported
-  optical state. Regain does not move equipment or restart guiding.
-- **Cooler keepalive** refreshes unchanged direct-mode output every five seconds
-  after acknowledgement, reducing repeated commands while preserving temperature
-  feedback, changed-output updates, recovery restoration and immediate shutdown.
-- Improve bounded cancellation cleanup, Windows USB completion diagnostics and
-  timeout handling when a helper descendant retains redirected output pipes.
-  Installer maintenance detects the running unified device/helper executable.
+- **Regain mount provider** wraps NINA's ASCOM telescope adapter without opening
+  another serial connection. It monitors unexpected tracking loss, unavailable
+  position and uncommanded coordinate jumps. Explicit tracking stops disarm it.
+- **Recover Regain mount** action and **Recover Regain mount on tracking loss**
+  trigger stop guiding, home, return to the saved sequence target, restore the
+  last healthy tracking rate, plate-solve/center, and restore previously active
+  guiding. Automatic recovery checks before the next light; an active exposure
+  is allowed to finish.
+- **Durable recovery fencing** prevents uncertain home/slew replay after failure,
+  cancellation, timeout, sequence reload or NINA restart. Inspection is required
+  before another attempt, and an in-flight vendor task keeps ownership until it
+  actually ends. Failed recovery stops subsequent acquisition without deadlocking
+  NINA's sequence interrupt.
+- Tracking verification allows NINA's cached ASCOM telemetry to refresh after a
+  write, without repeating the command. Invalid trigger settings stop imaging,
+  and disconnect faults retain useful diagnostic logging.
 
-USB reset remains disabled by default. The Windows operation cycles the selected
-camera port; this is not a guaranteed camera-hub or external-power cycle. Camera
-hub peripherals may disconnect. Wider companion-port/upstream-hub resets remain
-planned work. See [USB recovery setup](https://github.com/pulsarfab/regain/blob/v0.6.1.5/docs/usb-recovery.md).
+Installed NINA 3.2.0.9001 simulator acceptance verified tracking loss during a
+full-frame 30-second light, home/return/real local plate solving and centering,
+and the next light capture. Injected solver failure stopped subsequent capture;
+reloading an older unfenced sequence stayed blocked; explicit inspection cleared
+the journal. Complete Core and NINA suites passed (178 and 625 tests; five
+hardware/COM opt-in skips). Guiding lifecycle is covered by mediator fixtures;
+physical AM7 homing, live guiding and observatory safety acceptance remain
+outstanding. Enable mount recovery only after validating your own equipment.
 
-Validation included complete Rust and managed recovery suites, full-frame direct
-and SDK thermal/cancellation captures, and installed NINA acceptance on ASI6200MM
-Pro with ZWO CAA ASCOM. The final session-lifetime pass saved nine complete
-9576 × 6388, five-second RAW16 bin-1 images with distinct pixel hashes; one physical
-camera port cycle completed in 215 ms. The helper survived two NINA exits and a
-supervisor restart. The CAA driver reported no disconnect in that pass; a separate
-injected-disconnect pass verified its reconnection. Physical Linux USB recovery
-and clean-machine/LAN environment checks remain unvalidated locally.
+See [mount recovery setup and limits](https://github.com/pulsarfab/regain/blob/v0.6.1.6/docs/ascom-mount-recovery.md).
+Use `Regain-0.6.1.6.zip` for NINA or
+`Regain-ASCOM-0.6.1.6-win-x64-setup.exe` for Windows ASCOM and Alpaca. Mount
+recovery is a NINA provider and sequence feature; it adds no native ASCOM mount
+Chooser entry or Alpaca telescope endpoint.
 
-Use `Regain-0.6.1.5.zip` for NINA or
-`Regain-ASCOM-0.6.1.5-win-x64-setup.exe` for Windows ASCOM and Alpaca.
-Rust workspace crates use version `0.6.1`. Regain Hub remains a preview; direct USB
-support remains model-specific. See
-[supported hardware](https://github.com/pulsarfab/regain/blob/v0.6.1.5/README.md#supported-hardware).
+This is a managed-plugin revision. Rust crates remain at the already published
+`0.6.1`; no new crates.io upload is required. Existing camera, USB recovery,
+accessory and Hub features remain included.

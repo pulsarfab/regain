@@ -1,0 +1,39 @@
+<ResourceDictionary x:Class="Regain.NINA.MountRecoveryTemplates"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="clr-namespace:Regain.NINA"
+    xmlns:nina="clr-namespace:NINA.View.Sequencer;assembly=NINA.Sequencer">
+    <DataTemplate x:Key="MountRecoverySettings">
+        <StackPanel>
+            <TextBlock Text="Recovery homes the mount, returns to this target, restores tracking, centers and settles guiding. Requires the Regain ASCOM mount provider." TextWrapping="Wrap" />
+            <WrapPanel Margin="0,6">
+                <TextBlock Text="Detect loss after (s)" VerticalAlignment="Center" />
+                <TextBox Width="65" Margin="8,0" Text="{Binding Options.LostTrackingSeconds, ValidatesOnExceptions=True, UpdateSourceTrigger=PropertyChanged}" />
+                <TextBlock Text="Recovery deadline (s)" VerticalAlignment="Center" />
+                <TextBox Width="65" Margin="8,0" Text="{Binding Options.MotionTimeoutSeconds, ValidatesOnExceptions=True, UpdateSourceTrigger=PropertyChanged}" />
+                <TextBlock Text="Position jump (degrees)" VerticalAlignment="Center" />
+                <TextBox Width="65" Margin="8,0" Text="{Binding Options.CoordinateJumpDegrees, ValidatesOnExceptions=True, UpdateSourceTrigger=PropertyChanged}" />
+            </WrapPanel>
+            <TextBlock Text="{Binding Outcome}" TextWrapping="Wrap" />
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Previous recovery requires inspection" VerticalAlignment="Center" />
+                <CheckBox Margin="12,0" IsChecked="{Binding ReconciliationRequired, Mode=OneWay}" IsHitTestVisible="False" Focusable="False" />
+            </StackPanel>
+            <Button Content="Allow another recovery after inspecting mount…" Click="Reconcile" HorizontalAlignment="Left" Margin="0,6" />
+        </StackPanel>
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type local:RecoverMount}">
+        <nina:SequenceBlockView>
+            <nina:SequenceBlockView.SequenceItemContent>
+                <ContentControl Content="{Binding}" ContentTemplate="{StaticResource MountRecoverySettings}" />
+            </nina:SequenceBlockView.SequenceItemContent>
+        </nina:SequenceBlockView>
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type local:RecoverMountOnTrackingLoss}">
+        <StackPanel>
+            <TextBlock Text="Recover Regain mount on tracking loss" FontWeight="Bold" Margin="0,4" />
+            <TextBlock Text="Checks before each light exposure. A running exposure is allowed to finish; recovery never runs during another sequence instruction." TextWrapping="Wrap" />
+            <ContentControl Content="{Binding}" ContentTemplate="{StaticResource MountRecoverySettings}" />
+        </StackPanel>
+    </DataTemplate>
+</ResourceDictionary>

@@ -1,0 +1,153 @@
+{
+  "$id": "1",
+  "$type": "NINA.Sequencer.Container.SequenceRootContainer, NINA.Sequencer",
+  "Conditions": [],
+  "IsExpanded": true,
+  "Items": [
+    {
+      "$id": "2",
+      "$type": "NINA.Sequencer.Container.StartAreaContainer, NINA.Sequencer",
+      "Conditions": [],
+      "IsExpanded": true,
+      "Items": [],
+      "Name": "StartAreaContainer",
+      "Parent": {
+        "$ref": "1"
+      },
+      "Strategy": {
+        "$type": "NINA.Sequencer.Container.ExecutionStrategy.SequentialStrategy, NINA.Sequencer"
+      },
+      "Triggers": []
+    },
+    {
+      "$id": "3",
+      "$type": "NINA.Sequencer.Container.TargetAreaContainer, NINA.Sequencer",
+      "Conditions": [],
+      "IsExpanded": true,
+      "Items": [
+        {
+          "$id": "4",
+          "$type": "NINA.Sequencer.Container.DeepSkyObjectContainer, NINA.Sequencer",
+          "Conditions": [],
+          "IsExpanded": true,
+          "Items": [
+            {
+              "$id": "5",
+              "$type": "NINA.Sequencer.SequenceItem.Telescope.SetTracking, NINA.Sequencer",
+              "Attempts": 1,
+              "ErrorBehavior": 0,
+              "Parent": {
+                "$ref": "4"
+              },
+              "TrackingMode": 0
+            },
+            {
+              "$id": "6",
+              "$type": "NINA.Sequencer.SequenceItem.Utility.WaitForTimeSpan, NINA.Sequencer",
+              "Attempts": 1,
+              "ErrorBehavior": 0,
+              "Parent": {
+                "$ref": "4"
+              },
+              "Time": 10
+            },
+            {
+              "$id": "7",
+              "$type": "NINA.Sequencer.SequenceItem.Imaging.TakeExposure, NINA.Sequencer",
+              "Attempts": 1,
+              "ErrorBehavior": 0,
+              "ExposureCount": 1,
+              "ExposureTime": 30,
+              "Gain": -1,
+              "ImageType": "LIGHT",
+              "Offset": -1,
+              "Parent": {
+                "$ref": "4"
+              }
+            },
+            {
+              "$id": "8",
+              "$type": "NINA.Sequencer.SequenceItem.Imaging.TakeExposure, NINA.Sequencer",
+              "Attempts": 1,
+              "ErrorBehavior": 0,
+              "ExposureCount": 1,
+              "ExposureTime": 2,
+              "Gain": -1,
+              "ImageType": "LIGHT",
+              "Offset": -1,
+              "Parent": {
+                "$ref": "4"
+              }
+            }
+          ],
+          "Name": "Regain mount recovery SIMULATION",
+          "Parent": {
+            "$ref": "3"
+          },
+          "Strategy": {
+            "$type": "NINA.Sequencer.Container.ExecutionStrategy.SequentialStrategy, NINA.Sequencer"
+          },
+          "Target": {
+            "$type": "NINA.Astrometry.InputTarget, NINA.Astrometry",
+            "InputCoordinates": {
+              "$type": "NINA.Astrometry.InputCoordinates, NINA.Astrometry",
+              "DecDegrees": 43,
+              "DecMinutes": 43,
+              "DecSeconds": 7.54644,
+              "NegativeDec": false,
+              "RAHours": 20,
+              "RAMinutes": 58,
+              "RASeconds": 31.0862328
+            },
+            "TargetName": "Mount recovery SIMULATION"
+          },
+          "Triggers": [
+            {
+              "$id": "9",
+              "$type": "Regain.NINA.RecoverMountOnTrackingLoss, Regain.NINA",
+              "Options": {
+                "CoordinateJumpDegrees": 5,
+                "LostTrackingSeconds": 5,
+                "MotionTimeoutSeconds": 180
+              },
+              "Parent": {
+                "$ref": "4"
+              },
+              "ReconciliationRequired": false
+            }
+          ]
+        }
+      ],
+      "Name": "TargetAreaContainer",
+      "Parent": {
+        "$ref": "1"
+      },
+      "Strategy": {
+        "$type": "NINA.Sequencer.Container.ExecutionStrategy.SequentialStrategy, NINA.Sequencer"
+      },
+      "Triggers": []
+    },
+    {
+      "$id": "10",
+      "$type": "NINA.Sequencer.Container.EndAreaContainer, NINA.Sequencer",
+      "Conditions": [],
+      "IsExpanded": true,
+      "Items": [],
+      "Name": "EndAreaContainer",
+      "Parent": {
+        "$ref": "1"
+      },
+      "Strategy": {
+        "$type": "NINA.Sequencer.Container.ExecutionStrategy.SequentialStrategy, NINA.Sequencer"
+      },
+      "Triggers": []
+    }
+  ],
+  "Name": "SequenceRootContainer",
+  "Parent": null,
+  "SequenceTitle": "Regain mount recovery SIMULATION",
+  "Strategy": {
+    "$type": "NINA.Sequencer.Container.ExecutionStrategy.SequentialStrategy, NINA.Sequencer"
+  },
+  "Triggers": []
+}
