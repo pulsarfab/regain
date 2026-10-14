@@ -35,6 +35,8 @@ sequence or a NINA restart from replaying an uncertain move. Available from
 v0.6.1.6; physical AM7 and live-guiding acceptance remain outstanding.
 The next revision adds sensor AutoHome through Green Swamp Server's existing
 server API, with configurable search limits and no coordinate-home fallback.
+Recovery failures abort motion, disable tracking and stop the sequence; Regain
+never parks as a failure response.
 [Mount recovery setup and limits](docs/ascom-mount-recovery.md).
 
 ### Save an exposure after a failed download

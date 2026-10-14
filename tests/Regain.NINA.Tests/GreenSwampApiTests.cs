@@ -36,6 +36,7 @@ public sealed class GreenSwampApiTests
         public bool IsFullStop(int axis) => axis is 1 or 2 && !IsAutoHomeRunning;
         public void AutoHomeStart(int degreeLimit, int offsetDec) { Limit = degreeLimit; Offset = offsetDec; IsAutoHomeRunning = true; }
         public void AutoHomeStop() => IsAutoHomeRunning = false;
+        public void AxisStop(int axis) { Assert.Contains(axis, new[] { 1, 2 }); }
     }
     [Fact] public void LateBoundApiUsesDocumentedMembersAndParameters()
     {
@@ -44,13 +45,13 @@ public sealed class GreenSwampApiTests
         api.AscomOn = false; Assert.False(server.AscomOn);
         api.AutoHomeStart(120, 90); Assert.Equal(120, server.Limit); Assert.Equal(90, server.Offset);
         Assert.True(api.IsAutoHomeRunning); Assert.False(api.IsFullStop(1));
-        api.AutoHomeStop(); Assert.False(api.IsAutoHomeRunning); Assert.True(api.IsFullStop(2)); Assert.Equal("", api.LastAutoHomeError);
+        api.AutoHomeStop(); api.AxisStop(1); api.AxisStop(2); Assert.False(api.IsAutoHomeRunning); Assert.True(api.IsFullStop(2)); Assert.Equal("", api.LastAutoHomeError);
     }
     [Theory] [InlineData(false)] [InlineData(true)]
-    public void OnlyTheKnownNullErrorGetterBugIsNormalized(bool com)
+    public void UnreadableStatusIncludingTheNullErrorGetterBugMustFail(bool com)
     {
         var server = new Dispatch { Error = com ? new COMException("null field", unchecked((int)0x80004003)) : new NullReferenceException() };
-        using var api = new GreenSwampApi(server); Assert.Equal("", api.LastAutoHomeError);
+        using var api = new GreenSwampApi(server); Assert.Throws<IOException>(() => api.LastAutoHomeError);
         server.Error = new COMException("RPC unavailable", unchecked((int)0x800706BA));
         Assert.Equal(unchecked((int)0x800706BA), Assert.Throws<COMException>(() => api.LastAutoHomeError).HResult);
         server.Error = new IOException("Unreadable error state"); Assert.Throws<IOException>(() => api.LastAutoHomeError);

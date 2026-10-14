@@ -23,6 +23,7 @@ internal interface IGreenSwampApi : IDisposable
     bool IsFullStop(int axis);
     void AutoHomeStart(int degreeLimit, int offsetDec);
     void AutoHomeStop();
+    void AxisStop(int axis);
 }
 
 internal sealed class GreenSwampApi(object server) : IGreenSwampApi
@@ -56,13 +57,7 @@ internal sealed class GreenSwampApi(object server) : IGreenSwampApi
                     ? value : throw new IOException("GS.SkyApi returned an invalid AutoHome error value.");
             } catch (Exception error) when (error is NullReferenceException ||
                 error is COMException { HResult: unchecked((int)0x80004003) }) {
-                // GSS 1.2.2.7 clears its exception field to null on start, but
-                // this getter dereferences .Message. COM translates that exact
-                // null-reference bug to E_POINTER. No other API error is ignored.
-                // The caller separately requires start acknowledgement, stopped
-                // axes, AtHome, no slew and a connected server before success.
-                Logger.Warning("Regain GSS AutoHome: LastAutoHomeError has GSS's null-error getter bug; verifying stopped/home state.");
-                return string.Empty;
+                throw new IOException("GSS AutoHome error status is unreadable (null-error getter bug). Recovery must abort; success cannot be inferred from home position.", error);
             }
         }
     }
@@ -70,26 +65,62 @@ internal sealed class GreenSwampApi(object server) : IGreenSwampApi
         ? value : throw new IOException("GS.SkyApi returned an invalid axis stop value.");
     public void AutoHomeStart(int degreeLimit, int offsetDec) => Invoke(nameof(AutoHomeStart), BindingFlags.InvokeMethod, degreeLimit, offsetDec);
     public void AutoHomeStop() => Invoke(nameof(AutoHomeStop), BindingFlags.InvokeMethod);
+    public void AxisStop(int axis) => Invoke(nameof(AxisStop), BindingFlags.InvokeMethod, axis);
     public void Dispose() { if (Marshal.IsComObject(server)) Marshal.FinalReleaseComObject(server); }
 }
 
 internal static class GreenSwampAutoHome
 {
     internal static Task RunAsync(RegainMount mount, MountRecoveryOptions options, Func<IGreenSwampApi> connect,
-        Action guard, Action<string> report, CancellationToken token)
+        Action guard, Action<string> report, CancellationToken token) =>
+        OnSta(() => Run(mount, options, connect, guard, report, token));
+
+    private static Task OnSta(Action operation)
     {
         // Keep creation, calls and release on one apartment. The task remains
         // pending until the real asynchronous server operation stops, even when
         // RecoverAsync's outer deadline has already returned to the sequencer.
         var result = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var thread = new Thread(() => {
-            try { Run(mount, options, connect, guard, report, token); result.SetResult(); }
+            try { operation(); result.SetResult(); }
             catch (Exception error) { result.SetException(error); }
         }) { IsBackground = true, Name = "Regain GSS AutoHome" };
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
         return result.Task;
     }
+
+    internal static Task StopAsync(RegainMount mount, Func<IGreenSwampApi> connect, Task sensorOperation) => OnSta(() => {
+        using var api = connect();
+        void Attempt(Action command, string name) {
+            try { command(); } catch (Exception error) { Logger.Error("Regain GSS " + name + " failed: " + error); }
+        }
+        // Independent connection to the same server: request stop even if the
+        // original COM call is blocked. These are only stop commands, never park.
+        Attempt(api.AutoHomeStop, "AutoHomeStop");
+        Attempt(() => api.AxisStop(1), "axis 1 stop");
+        Attempt(() => api.AxisStop(2), "axis 2 stop");
+        while (api.IsAutoHomeRunning) Thread.Sleep(250);
+        // The homing owner must finish its gate cleanup before AbortSlew. GSS's
+        // AbortSlew can restore tracking; Tracking=false is ignored with AscomOn
+        // disabled. Temporarily open that gate, then force tracking off last.
+        try { sensorOperation.GetAwaiter().GetResult(); } catch { }
+        bool previousGate = api.AscomOn;
+        try {
+            api.AscomOn = true;
+            if (!api.AscomOn) throw new IOException("GSS ASCOM movement gate did not open for tracking-off.");
+            Attempt(() => mount.TrackingEnabled = false, "initial tracking-off");
+            try { mount.StopSlew(); }
+            finally { mount.TrackingEnabled = false; }
+            var confirmation = Stopwatch.StartNew();
+            while (api.IsAutoHomeRunning || !api.IsFullStop(1) || !api.IsFullStop(2) || mount.TrackingEnabled || mount.Slewing) {
+                if (mount.TrackingEnabled) mount.TrackingEnabled = false;
+                if (confirmation.Elapsed.TotalSeconds >= 5) throw new IOException("GSS tracking-off and both stopped axes are not confirmed.");
+                Thread.Sleep(250);
+            }
+            if (!api.IsMountRunning || !api.IsConnected) throw new IOException("GSS is disconnected; tracking-off and axis stop cannot be confirmed.");
+        } finally { if (!previousGate) api.AscomOn = false; }
+    });
 
     private static void Run(RegainMount mount, MountRecoveryOptions options, Func<IGreenSwampApi> connect,
         Action guard, Action<string> report, CancellationToken token)

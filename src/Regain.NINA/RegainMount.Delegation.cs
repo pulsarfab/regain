@@ -63,12 +63,14 @@ public sealed partial class RegainMount
     public PierSide DestinationSideOfPier(Coordinates coordinates) => upstream.DestinationSideOfPier(coordinates);
     private int manualAxes;
     public void MoveAxis(TelescopeAxes axis, double rate) {
+        if (recoveryFailed && rate != 0) throw new IOException("Mount recovery failed; inspect before moving an axis.");
         int bit = 1 << (int)axis;
         if (rate != 0) Interlocked.Or(ref manualAxes, bit);
         upstream.MoveAxis(axis, rate);
         if (rate == 0) { Interlocked.And(ref manualAxes, ~bit); Health.ResetPositionBaseline(); }
     }
     public void SetCustomTrackingRate(double rightAscensionRate, double declinationRate) {
+        if (recoveryFailed) throw new IOException("Mount recovery failed; inspect before setting custom tracking.");
         upstream.SetCustomTrackingRate(rightAscensionRate, declinationRate);
         if (!Recovering) { intentionalStop = false; Health.Intent(true); }
     }

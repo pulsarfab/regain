@@ -98,12 +98,13 @@ blocked COM call can outlive the sequence deadline; the durable inspection fence
 prevents another attempt. The helper never closes GSS or opens its serial port.
 
 GSS 1.2.2.7's `LastAutoHomeError` getter dereferences a null exception after a
-successful start. Regain logs and normalizes only that getter's null-reference
-failure (`E_POINTER` over COM); other errors fail recovery. GSS also leaves this
-field empty for a stop requested in its own UI. The API therefore does not provide
-an independent per-axis success result: completion still depends on its running,
-stopped-axis and home telemetry. A UI stop at an already-valid home position can
-look like completion. Use NINA cancellation when recovery must not resume.
+successful start. **Unreadable status is a recovery failure**, including this
+null-reference bug (`E_POINTER` over COM). Regain aborts, disables tracking and
+retains the inspection fence; it never infers success from home coordinates.
+With that GSS version, sensor homing can run, but automatic target return is
+blocked until GSS provides readable completion/error status. GSS also leaves the
+error field empty for a stop requested in its own UI and exposes no independent
+per-axis success result. Use NINA cancellation to stop the entire recovery.
 
 Configure the search and offset for your mount and cable travel. Sensor search
 can move a mount whose original position is unknown, and plate solving happens
@@ -125,6 +126,36 @@ Recovery has one attempt. Before it starts, the action/trigger persists
 `ReconciliationRequired` in its sequence settings. Only complete success clears
 that fence. Failure or cancellation interrupts the containing sequence, so a
 failed trigger cannot silently fall through to the next exposure.
+
+**Every runtime recovery failure, cancellation or deadline aborts mount motion
+and disables tracking. Regain never parks, unparks, retries homing, returns to
+the target or restarts guiding after failure.** The original mount is stopped
+even if NINA's selected mount or profile changes. Guiding is stopped as well.
+Tracking-off is sent independently of the abort, then repeated after AbortSlew
+returns because some drivers restore tracking during abort. If a recovery command
+finishes late, the stop/tracking-off sequence runs again afterward before ownership
+is released. Failed or fenced action execution also requests a stop instead of
+allowing imaging to continue.
+
+The failed wrapper also rejects further slews, home, park/unpark, manual-axis
+movement and tracking enable until **Allow another recovery after inspecting
+mount…** clears the failure. Its normal telemetry poll commands tracking off
+again if the vendor server re-enables it later. It does not launch another home,
+park or abort from that poll. Clearing inspection leaves tracking off; it does
+not resume imaging or guiding automatically.
+
+For GSS, cleanup requests `AutoHomeStop` and both axis stops through a separate
+connection to the same server. After the homing owner's gate cleanup finishes,
+Regain temporarily enables ASCOM command processing, aborts and sets tracking off
+last; this avoids GSS silently ignoring tracking writes while its gate is closed.
+The previous command-gate state is restored. No serial connection is opened.
+
+The sequence caller waits at most six seconds for cleanup before returning the
+original failure. Actual stop commands keep ownership and the journal lock until
+they finish. NINA logs distinguish **tracking off/no slew reported** from **stop
+or tracking-off NOT confirmed**. A disconnected or unresponsive driver cannot
+prove the hardware stopped; recovery stays fenced for inspection and never tries
+a park as a fallback.
 
 Before moving, recovery also creates a durable per-mount marker under
 `%LOCALAPPDATA%\PulsarFab\Regain\MountRecovery`. It survives a NINA restart or
@@ -168,9 +199,14 @@ unsupported/busy/disconnected/parked servers, failed and unacknowledged starts,
 missing home confirmation, safety changes and cancellation with homing still
 running. They verify no coordinate-home fallback and retained ownership until
 the real server operation stops. These are API fixtures, not physical sensor tests.
-The development sensor-home change passes the full Core and NINA suites (183
-and 645 tests; five explicit hardware/COM skips). Its WPF settings test runs
+The development sensor-home/failure-stop change passes the full Core and NINA
+suites (185 and 655 tests; five explicit hardware/COM skips). Its WPF settings test runs
 outside parallel UI collections to avoid WPF schema/type-initialization deadlock.
+Failure fixtures cover homing, return slew, centering, guiding and safety faults,
+AbortSlew re-enabling tracking or throwing, late tracking writes, blocked aborts
+retaining the durable journal lock, invalid/fenced action execution, persistent
+tracking-off enforcement and blocked shutdown parking, and zero park or
+unpark commands throughout the mount recovery suite.
 
 Review regression tests also use NINA's real running sequence container to
 verify interruption cannot await its own action, allow cached tracking telemetry

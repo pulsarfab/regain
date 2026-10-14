@@ -31,6 +31,7 @@ public sealed partial class RegainMount : BaseINPC, ITelescope, IDisposable
     private int commandedMotion, recovering;
     private int upstreamDisposed;
     private bool disposed, intentionalStop;
+    private volatile bool recoveryFailed;
     internal MountRecoveryMonitor Health { get; }
     private TrackingRate? savedTrackingRate;
     internal TrackingRate? SavedTrackingRate { get { lock (gate) return savedTrackingRate; } }
@@ -47,7 +48,7 @@ public sealed partial class RegainMount : BaseINPC, ITelescope, IDisposable
     public string DisplayName => "PulsarFab regain Mount — " + upstream.DisplayName;
     public string Category => "PulsarFab regain";
     public string Description => "ASCOM mount monitoring; homing and target recovery are opt-in NINA sequence operations.";
-    public string DriverInfo => "Regain mount: " + (Recovering ? "recovering" : Health.Fault ?? "monitoring");
+    public string DriverInfo => "Regain mount: " + (recoveryFailed ? "aborted; tracking-off requested; inspect" : Recovering ? "recovering" : Health.Fault ?? "monitoring");
     public string DriverVersion => typeof(RegainMount).Assembly.GetName().Version!.ToString();
     public bool Connected => !disposed && upstream.Connected;
     public bool HasSetupDialog => upstream.HasSetupDialog;
@@ -83,6 +84,18 @@ public sealed partial class RegainMount : BaseINPC, ITelescope, IDisposable
     internal void Observe()
     {
         if (Recovering || disposed) return;
+        if (recoveryFailed) {
+            // Some server AbortSlew implementations return before a background
+            // task restores tracking. Keep tracking disabled until inspection;
+            // never initiate another abort, home or park from this poll.
+            try {
+                if (upstream.TrackingEnabled) {
+                    upstream.TrackingEnabled = false;
+                    Logger.Warning("Regain mount tracking re-enabled after failed recovery; commanded off again. Inspection required.");
+                }
+            } catch (Exception error) { Logger.Error("Regain cannot enforce tracking off after recovery failure: " + error); }
+            RaisePropertyChanged(nameof(DriverInfo)); return;
+        }
         var previous = Health.Fault;
         var reading = new MountObservation(false, false, false, double.NaN, double.NaN);
         Exception? failure = null;
@@ -114,16 +127,21 @@ public sealed partial class RegainMount : BaseINPC, ITelescope, IDisposable
     public bool TrackingEnabled {
         get => upstream.TrackingEnabled;
         set {
+            if (value && recoveryFailed) throw new IOException("Mount recovery failed; inspect and clear its fence before enabling tracking.");
             if (!Recovering) { intentionalStop = !value; Health.Intent(value); }
             upstream.TrackingEnabled = value;
         }
     }
     public TrackingMode TrackingMode {
         get => upstream.TrackingMode;
-        set { if (!Recovering) { intentionalStop = value == TrackingMode.Stopped; Health.Intent(!intentionalStop); } upstream.TrackingMode = value; }
+        set {
+            if (recoveryFailed && value != TrackingMode.Stopped) throw new IOException("Mount recovery failed; inspect before enabling a tracking rate.");
+            if (!Recovering) { intentionalStop = value == TrackingMode.Stopped; Health.Intent(!intentionalStop); } upstream.TrackingMode = value;
+        }
     }
     private async Task<T> Motion<T>(Func<Task<T>> operation, bool stopIntent = false)
     {
+        if (recoveryFailed) throw new IOException("Mount recovery failed; further motion, including park/unpark, is blocked until inspection is cleared.");
         if (!Recovering && stopIntent) { intentionalStop = true; Health.Intent(false); }
         Interlocked.Increment(ref commandedMotion);
         try { return await operation().ConfigureAwait(false); }
@@ -153,6 +171,8 @@ public sealed partial class RegainMount : BaseINPC, ITelescope, IDisposable
         }
     }
     internal void Recovered(bool tracking) { intentionalStop = !tracking; Health.Intent(tracking); }
+    internal void RecoveryFailed() { recoveryFailed = true; intentionalStop = true; Health.Intent(false); }
+    internal void ClearRecoveryFailure() { recoveryFailed = false; intentionalStop = true; Health.Intent(false); }
     public void Dispose()
     {
         lock (gate) {

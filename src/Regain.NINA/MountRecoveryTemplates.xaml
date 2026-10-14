@@ -6,6 +6,7 @@
     <DataTemplate x:Key="MountRecoverySettings">
         <StackPanel>
             <TextBlock Text="Recovery homes the mount, returns to this target, restores tracking, centers and settles guiding. Requires the Regain ASCOM mount provider." TextWrapping="Wrap" />
+            <TextBlock Text="Any recovery failure aborts motion, disables tracking and stops the sequence. No park or retry is attempted; inspection is required." TextWrapping="Wrap" />
             <WrapPanel Margin="0,6">
                 <TextBlock Text="Detect loss after (s)" VerticalAlignment="Center" />
                 <TextBox Width="65" Margin="8,0" Text="{Binding Options.LostTrackingSeconds, ValidatesOnExceptions=True, UpdateSourceTrigger=PropertyChanged}" />

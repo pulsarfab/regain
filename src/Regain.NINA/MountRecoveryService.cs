@@ -36,24 +36,41 @@ internal sealed class MountRecoveryService
     internal bool ClearInspection()
     {
         if (HasPendingRecovery) return false;
-        if (journal is null) return true;
+        if (journal is null) { (Mount ?? recoveryMount)?.ClearRecoveryFailure(); return true; }
         var selected = Mount;
         if (selected is null || (recoveryMount is not null && recoveryMount.Id != selected.Id)) return false;
-        return journal.ClearAfterInspection(selected.Id);
+        if (!journal.ClearAfterInspection(selected.Id)) return false;
+        selected.ClearRecoveryFailure(); return true;
+    }
+    internal async Task AbortSelectedAsync(RegainMount? selected)
+    {
+        if (selected is null || selected.Recovering) return;
+        var ownership = selected.BeginRecovery();
+        recoveryMount = selected;
+        var halt = Task.Run(async () => {
+            using var retained = ownership;
+            MountRecoveryJournal.Attempt? marker = null;
+            try {
+                try { marker = journal?.HoldForAbort(selected.Id); }
+                catch (Exception error) { Logger.Error("Regain could not create the abort inspection marker: " + error); }
+                await MountRecoveryStop.RunAsync(selected, guider, greenSwampApi, Task.CompletedTask).ConfigureAwait(false);
+            } finally { marker?.Dispose(); }
+        });
+        _ = halt.ContinueWith(task => Logger.Error(task.Exception!.GetBaseException()), CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+        try { await halt.WaitAsync(TimeSpan.FromSeconds(6)).ConfigureAwait(false); }
+        catch (TimeoutException) { Logger.Error("Regain preflight abort/tracking-off is still pending. Inspect mount; no park attempted."); }
     }
     internal async Task RecoverAsync(Coordinates target, MountRecoveryOptions options, IProgress<ApplicationStatus> progress, CancellationToken token)
     {
-        options.Validate();
-        target = Copy(target);
         var mount = Mount ?? throw new InvalidOperationException("Select a PulsarFab regain ASCOM mount in NINA first.");
         bool tracking = mount.Health.ExpectedTracking;
         // A stopped/parked session grants no authority to enable tracking or
         // move the mount. Recovery is only for previously tracking imaging.
         if (!tracking) { Logger.Info("Regain mount recovery skipped: tracking was intentionally disabled."); return; }
-        var rate = mount.SavedTrackingRate ?? throw new IOException("Wait for a healthy tracking observation before attempting mount recovery.");
-        object selectedProfile = profile();
+        object? selectedProfile = null;
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
-        deadline.CancelAfter(TimeSpan.FromSeconds(options.MotionTimeoutSeconds));
+        deadline.CancelAfter(TimeSpan.FromSeconds(180)); // Validate custom deadline inside the owned attempt.
         var recoveryToken = deadline.Token;
         void Guard()
         {
@@ -81,13 +98,35 @@ internal sealed class MountRecoveryService
         }
         var ownership = mount.BeginRecovery();
         recoveryMount = mount;
+        MountRecoveryJournal.Attempt? attempt = null;
+        var stopGate = new object();
+        Task sensorOperation = Task.CompletedTask;
+        Task? stop = null;
+        var workDone = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        async Task Halt()
+        {
+            bool workerWasFinished = workDone.Task.IsCompleted;
+            await MountRecoveryStop.RunAsync(mount, guider, greenSwampApi, sensorOperation).ConfigureAwait(false);
+            if (!workerWasFinished) {
+                await workDone.Task.ConfigureAwait(false);
+                // A blocked vendor write may enable tracking or motion when it
+                // eventually returns. Stop again after all recovery work ended.
+                await MountRecoveryStop.RunAsync(mount, guider, greenSwampApi, sensorOperation).ConfigureAwait(false);
+            }
+        }
+        Task Stop()
+        {
+            lock (stopGate) return stop ??= Halt();
+        }
         async Task Work()
         {
-            // Own the wrapper until the real operation terminates, even if a
-            // cancellation/deadline makes the caller stop awaiting a vendor task.
-            using var retainedOwnership = ownership;
+            attempt = journal?.Begin(mount.Id);
+            options.Validate();
+            deadline.CancelAfter(TimeSpan.FromSeconds(options.MotionTimeoutSeconds));
+            target = Copy(target);
+            selectedProfile = profile();
+            var rate = mount.SavedTrackingRate ?? throw new IOException("Wait for a healthy tracking observation before attempting mount recovery.");
             Guard();
-            using var attempt = journal?.Begin(mount.Id);
             bool guided = guider.GetDevice() is IGuider { Connected: true } guide &&
                 new[] { "Guiding", "LostLock", "Dithering", "Settling" }.Contains(guide.State, StringComparer.OrdinalIgnoreCase);
             bool guiderConnected = guider.GetDevice() is { Connected: true };
@@ -108,7 +147,12 @@ internal sealed class MountRecoveryService
                 throw new IOException("Mount must support homing, coordinate slews and tracking control.");
             Guard();
             if (sensorHome) {
-                await GreenSwampAutoHome.RunAsync(mount, options, greenSwampApi, Guard, Report, recoveryToken).ConfigureAwait(false);
+                lock (stopGate) {
+                    Guard();
+                    if (stop is not null) throw new IOException("Mount recovery has already been aborted.");
+                    sensorOperation = GreenSwampAutoHome.RunAsync(mount, options, greenSwampApi, Guard, Report, recoveryToken);
+                }
+                await sensorOperation.ConfigureAwait(false);
             } else {
                 Report("Homing mount through ASCOM FindHome");
                 if (!await telescope.FindHome(progress, recoveryToken).ConfigureAwait(false)) throw new IOException("Homing was not acknowledged.");
@@ -140,17 +184,42 @@ internal sealed class MountRecoveryService
             Guard();
             if (mount.Slewing || mount.TrackingEnabled != tracking) throw new IOException("Mount state changed before recovery completed.");
             Guard();
-            attempt?.Complete();
-            mount.Recovered(tracking); Report("Mount recovery complete");
         }
-        var work = Task.Run(Work, CancellationToken.None);
-        _ = work.ContinueWith(task => { _ = task.Exception; }, CancellationToken.None,
+        var work = Task.Run(async () => { try { await Work().ConfigureAwait(false); } finally { workDone.TrySetResult(); } }, CancellationToken.None);
+        var callerDone = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        async Task ReleaseOwnership()
+        {
+            try {
+                try { await work.ConfigureAwait(false); } catch { /* Caller observes the failure. */ }
+                await callerDone.Task.ConfigureAwait(false);
+                Task? pendingStop;
+                lock (stopGate) pendingStop = stop;
+                if (pendingStop is not null) await pendingStop.ConfigureAwait(false);
+            } finally { attempt?.Dispose(); ownership.Dispose(); }
+        }
+        var released = ReleaseOwnership();
+        _ = released.ContinueWith(task => Logger.Error(task.Exception!.GetBaseException()), CancellationToken.None,
             TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
-        try { await work.WaitAsync(recoveryToken).ConfigureAwait(false); }
-        catch (OperationCanceledException error) when (!token.IsCancellationRequested) {
-            deadline.Cancel(); throw new TimeoutException("Mount recovery timed out. Inspect equipment before another operation; a vendor command may still be in flight.", error);
+        async Task StopBeforeReturning()
+        {
+            deadline.Cancel();
+            try { await Stop().WaitAsync(TimeSpan.FromSeconds(6)).ConfigureAwait(false); }
+            catch (TimeoutException) { Logger.Error("Regain mount abort/tracking-off is still pending; commands remain owned and recovery is fenced. No park attempted."); }
         }
-        catch { deadline.Cancel(); throw; }
+        try {
+            await work.WaitAsync(recoveryToken).ConfigureAwait(false);
+            Guard(); Report("Mount recovery complete"); Guard();
+            attempt?.Complete(); mount.Recovered(tracking);
+        }
+        catch (OperationCanceledException error) when (!token.IsCancellationRequested) {
+            await StopBeforeReturning().ConfigureAwait(false);
+            throw new TimeoutException("Mount recovery timed out and was aborted. Stop and tracking-off requested; inspect equipment if confirmation is unavailable. No park attempted.", error);
+        }
+        catch { await StopBeforeReturning().ConfigureAwait(false); throw; }
+        finally {
+            callerDone.TrySetResult();
+            if (work.IsCompleted && (stop?.IsCompleted ?? true)) await released.ConfigureAwait(false);
+        }
     }
     private static void RestoreRate(RegainMount mount, TrackingRate rate)
     {
