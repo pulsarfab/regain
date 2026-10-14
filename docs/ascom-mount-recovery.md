@@ -1,8 +1,7 @@
 # Recover an ASCOM mount in NINA
 
-Development feature: source builds on `feature/ascom-mount-recovery` only.
-It is not included in the published v0.6.1.5 packages. Physical mount acceptance
-is still required before unattended use.
+Available from v0.6.1.6 as an opt-in NINA feature. Physical mount acceptance is
+still required before unattended use.
 
 The **PulsarFab regain Mount — <driver>** choices wrap NINA's existing ASCOM
 telescope adapters. Choose the entry for your installed ZWO or other mount
