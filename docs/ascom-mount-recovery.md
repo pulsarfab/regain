@@ -68,10 +68,16 @@ does not enable tracking. Sidereal, lunar, solar, King and finite custom rates
 use the same saved-rate path. Homing must be supported and trustworthy on the
 specific mount; the wrapper does not infer physical position from reset telemetry.
 
+Standard ASCOM recovery refuses a pre-existing `AtHome=true` reading: NINA's
+adapter can log a failed FindHome call and return normally, leaving old home
+telemetry behind. An ambiguous result stops recovery rather than authorizing
+a return slew. The GSS path instead requires its sensor-search start/completion
+and readable error status.
+
 ## Green Swamp Server sensor AutoHome
 
-The GSS sensor path is under development after v0.6.1.6. The basic wrapper in
-that release uses standard ASCOM FindHome for every driver.
+The GSS sensor path and stop-only failure handling are available from v0.6.1.7.
+The basic wrapper in v0.6.1.6 uses standard ASCOM FindHome for every driver.
 
 For the registered **ASCOM.GS.Sky.Telescope** driver, sensor AutoHome is enabled
 by default in the recovery action and trigger. Regain connects to the installed
@@ -138,11 +144,14 @@ is released. Failed or fenced action execution also requests a stop instead of
 allowing imaging to continue.
 
 The failed wrapper also rejects further slews, home, park/unpark, manual-axis
-movement and tracking enable until **Allow another recovery after inspecting
+movement, pulse guiding, raw/custom commands and tracking enable until **Allow another recovery after inspecting
 mount…** clears the failure. Its normal telemetry poll commands tracking off
 again if the vendor server re-enables it later. It does not launch another home,
 park or abort from that poll. Clearing inspection leaves tracking off; it does
 not resume imaging or guiding automatically.
+The journal restores this latch when a wrapper is recreated, before it accepts
+commands. Inspection clearance requires the original selected mount, no pending
+operation, a connected driver, tracking off and no reported slew.
 
 For GSS, cleanup requests `AutoHomeStop` and both axis stops through a separate
 connection to the same server. After the homing owner's gate cleanup finishes,
@@ -200,7 +209,7 @@ missing home confirmation, safety changes and cancellation with homing still
 running. They verify no coordinate-home fallback and retained ownership until
 the real server operation stops. These are API fixtures, not physical sensor tests.
 The development sensor-home/failure-stop change passes the full Core and NINA
-suites (185 and 655 tests; five explicit hardware/COM skips). Its WPF settings test runs
+suites (185 and 661 tests; five explicit hardware/COM skips). Its WPF settings test runs
 outside parallel UI collections to avoid WPF schema/type-initialization deadlock.
 Failure fixtures cover homing, return slew, centering, guiding and safety faults,
 AbortSlew re-enabling tracking or throwing, late tracking writes, blocked aborts

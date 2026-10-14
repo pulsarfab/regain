@@ -87,7 +87,7 @@ public sealed class MountRecoveryTests
             Upstream.Setup(m => m.StopSlew()).Callback(() => { Calls.Add("abort"); Slewing = false; });
             Upstream.Setup(m => m.FindHome(It.IsAny<CancellationToken>())).Returns(async (CancellationToken t) => { Calls.Add("home"); if (OnHome is not null) await OnHome(t); Home = true; Rate = new() { TrackingMode = TrackingMode.Sidereal }; });
             Upstream.Setup(m => m.SlewToCoordinates(It.IsAny<Coordinates>(),It.IsAny<CancellationToken>())).Returns((Coordinates c, CancellationToken _) => { Calls.Add("slew"); SlewTarget = c; Home = false; return Task.FromResult(!RejectSlew); });
-            Mount = new(Upstream.Object, Clock);
+            Mount = new(Upstream.Object, Clock, journal);
             Telescope.Setup(m => m.GetDevice()).Returns(Mount);
             Telescope.Setup(m => m.FindHome(It.IsAny<IProgress<ApplicationStatus>>(),It.IsAny<CancellationToken>())).Returns(async (IProgress<ApplicationStatus> _, CancellationToken t) => { await Mount.FindHome(t); return true; });
             Telescope.Setup(m => m.SlewToCoordinatesAsync(It.IsAny<Coordinates>(),It.IsAny<CancellationToken>())).Returns((Coordinates c,CancellationToken t) => Mount.SlewToCoordinates(c,t));
@@ -290,6 +290,14 @@ public sealed class MountRecoveryTests
         Assert.Equal(1,rig.Calls.Count(c=>c=="home")); Assert.Equal(1,rig.Calls.Count(c=>c=="slew"));
         Assert.DoesNotContain("center",rig.Calls); Assert.DoesNotContain("guide:start",rig.Calls);
     }
+    [Fact] public async Task ExistingHomeTelemetryCannotTurnASCOMsSwallowedHomeErrorIntoSuccess()
+    {
+        using var rig = new Rig(); rig.Home = true;
+        rig.Telescope.Setup(t => t.FindHome(It.IsAny<IProgress<ApplicationStatus>>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        await Assert.ThrowsAsync<IOException>(() => rig.Service.RecoverAsync(Target, new(), new Progress<ApplicationStatus>(), default));
+        Assert.DoesNotContain("home", rig.Calls); Assert.DoesNotContain("slew", rig.Calls);
+        Assert.Contains("abort", rig.Calls); Assert.False(rig.Tracking);
+    }
     [Theory] [InlineData("home")] [InlineData("slew")] [InlineData("center")] [InlineData("guiding")] [InlineData("unsafe")]
     public async Task EveryRecoveryPhaseFailureAbortsAndLeavesTrackingAndGuidingOff(string phase)
     {
@@ -435,14 +443,58 @@ public sealed class MountRecoveryTests
         Assert.True(invoke.Entered); Assert.True(run.IsCompleted); Assert.True(action.ReconciliationRequired);
         Assert.Contains("abort",rig.Calls); Assert.False(rig.Tracking); Assert.DoesNotContain("home",rig.Calls);
     }
-    [Fact] public void InvalidTriggerStopsItsContainerInsteadOfFallingThroughToImaging()
+    [Fact] public async Task InvalidTriggerStopsItsContainerAndMountInsteadOfFallingThroughToImaging()
     {
         using var rig = new Rig(); var parent = TargetContext();
         var trigger = new RecoverMountOnTrackingLoss(rig.Service) { Options = new() { MotionTimeoutSeconds = 0 } };
         trigger.AttachNewParent(parent.Object);
         var light = new Mock<IExposureItem>(); light.SetupGet(e => e.ImageType).Returns("LIGHT");
         Assert.True(trigger.ShouldTrigger(null!, light.Object)); Assert.False(trigger.Validate());
+        await trigger.ValidationAbort;
+        Assert.False(rig.Tracking); Assert.True(trigger.ReconciliationRequired); Assert.Contains("abort", rig.Calls);
         parent.Verify(p => p.Interrupt(), Times.Once);
+    }
+    [Fact] public void EditingInvalidTriggerSettingsDoesNotStopEquipment()
+    {
+        using var rig = new Rig(); var trigger = new RecoverMountOnTrackingLoss(rig.Service) { Options = new() { MotionTimeoutSeconds = 0 } };
+        trigger.AttachNewParent(TargetContext().Object);
+        Assert.False(trigger.Validate()); Assert.Empty(rig.Calls); Assert.True(rig.Tracking);
+    }
+    [Fact] public async Task RecreatedWrapperRestoresFailureLatchAndBlocksAllCommandBypasses()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "regain-review-" + Guid.NewGuid());
+        try {
+            var journal = new MountRecoveryJournal(directory);
+            using var rig = new Rig(journal); rig.CenterFails = true;
+            await Assert.ThrowsAsync<IOException>(() => rig.Service.RecoverAsync(Target, new(), new Progress<ApplicationStatus>(), default));
+            using var recreated = new RegainMount(rig.Upstream.Object, rig.Clock, journal);
+            Assert.Contains("aborted", recreated.DriverInfo);
+            Assert.Throws<IOException>(() => recreated.TrackingEnabled = true);
+            await Assert.ThrowsAsync<IOException>(() => recreated.Park(default));
+            Assert.Throws<IOException>(() => recreated.PulseGuide(default, 100));
+            Assert.Throws<IOException>(() => recreated.Action("park", ""));
+            Assert.Throws<IOException>(() => recreated.SendCommandString("park"));
+            Assert.Throws<IOException>(() => recreated.SendCommandBool("park"));
+            Assert.Throws<IOException>(() => recreated.SendCommandBlind("park"));
+            Assert.Throws<IOException>(() => recreated.Sync(Target));
+            rig.Tracking = true; recreated.Observe(); Assert.False(rig.Tracking);
+            rig.Upstream.Verify(m => m.PulseGuide(default, 100), Times.Never);
+            rig.Telescope.Setup(m => m.GetDevice()).Returns(recreated);
+            Assert.True(rig.Service.ClearInspection()); recreated.TrackingEnabled = true; Assert.True(rig.Tracking);
+        } finally { Directory.Delete(directory, recursive: true); }
+    }
+    [Theory] [InlineData("tracking")] [InlineData("slewing")] [InlineData("unreadable")]
+    public async Task InspectionCannotClearWhenStoppedStateIsUnconfirmed(string state)
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "regain-inspect-" + Guid.NewGuid());
+        try {
+            var journal = new MountRecoveryJournal(directory); using var rig = new Rig(journal); rig.CenterFails = true;
+            await Assert.ThrowsAsync<IOException>(() => rig.Service.RecoverAsync(Target, new(), new Progress<ApplicationStatus>(), default));
+            if (state == "tracking") rig.Tracking = true;
+            if (state == "slewing") rig.Slewing = true;
+            if (state == "unreadable") rig.Upstream.SetupGet(m => m.TrackingEnabled).Throws(new IOException("No telemetry"));
+            Assert.False(rig.Service.ClearInspection()); Assert.True(journal.Required(rig.Mount.Id));
+        } finally { Directory.Delete(directory, recursive: true); }
     }
     [Fact] public async Task ChangingSelectionCannotClearFenceWhileOldMountOperationIsPending()
     {
@@ -459,6 +511,8 @@ public sealed class MountRecoveryTests
         release.SetResult();
         using var limit = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         while (rig.Mount.Recovering) await Task.Delay(10, limit.Token);
+        Assert.False(action.AllowAfterInspection());
+        rig.Telescope.Setup(t => t.GetDevice()).Returns(rig.Mount);
         Assert.True(action.AllowAfterInspection());
     }
     [Fact] public async Task LoadingAnOlderSequenceCannotBypassAnUncertainRecoveryJournal()

@@ -26,6 +26,7 @@ public sealed partial class RegainMount : BaseINPC, ITelescope, IDisposable
 {
     private readonly ITelescope upstream;
     private readonly object gate = new();
+    private readonly MountRecoveryJournal failureJournal;
     private CancellationTokenSource? polling;
     private Task? pollTask;
     private int commandedMotion, recovering;
@@ -37,9 +38,11 @@ public sealed partial class RegainMount : BaseINPC, ITelescope, IDisposable
     internal TrackingRate? SavedTrackingRate { get { lock (gate) return savedTrackingRate; } }
     internal bool Recovering => Volatile.Read(ref recovering) != 0;
     internal bool IsDisposed { get { lock (gate) return disposed; } }
-    internal RegainMount(ITelescope upstream, TimeProvider? clock = null)
+    internal RegainMount(ITelescope upstream, TimeProvider? clock = null, MountRecoveryJournal? journal = null)
     {
-        this.upstream = upstream; Health = new(clock); upstream.PropertyChanged += Changed;
+        this.upstream = upstream; Health = new(clock);
+        failureJournal = journal ?? new(MountRecoveryJournal.DefaultDirectory);
+        RefreshFailureFence(); upstream.PropertyChanged += Changed;
     }
     private void Changed(object? sender, PropertyChangedEventArgs e) => RaisePropertyChanged(e.PropertyName);
     public string Id => "Regain.Mount/" + Uri.EscapeDataString(upstream.Id);
@@ -60,6 +63,8 @@ public sealed partial class RegainMount : BaseINPC, ITelescope, IDisposable
         if (connected) {
             lock (gate) {
                 if (disposed || token.IsCancellationRequested) { upstream.Disconnect(); return false; }
+                RefreshFailureFence();
+                if (recoveryFailed) upstream.TrackingEnabled = false;
                 if (!Recovering) { intentionalStop = false; savedTrackingRate = null; Health.Intent(false); }
                 if (pollTask is null || pollTask.IsCompleted || polling?.IsCancellationRequested == true) {
                     var previous = pollTask ?? Task.CompletedTask;
@@ -84,6 +89,7 @@ public sealed partial class RegainMount : BaseINPC, ITelescope, IDisposable
     internal void Observe()
     {
         if (Recovering || disposed) return;
+        RefreshFailureFence();
         if (recoveryFailed) {
             // Some server AbortSlew implementations return before a background
             // task restores tracking. Keep tracking disabled until inspection;
@@ -127,7 +133,7 @@ public sealed partial class RegainMount : BaseINPC, ITelescope, IDisposable
     public bool TrackingEnabled {
         get => upstream.TrackingEnabled;
         set {
-            if (value && recoveryFailed) throw new IOException("Mount recovery failed; inspect and clear its fence before enabling tracking.");
+            if (value) RequireInspectionCleared();
             if (!Recovering) { intentionalStop = !value; Health.Intent(value); }
             upstream.TrackingEnabled = value;
         }
@@ -135,13 +141,13 @@ public sealed partial class RegainMount : BaseINPC, ITelescope, IDisposable
     public TrackingMode TrackingMode {
         get => upstream.TrackingMode;
         set {
-            if (recoveryFailed && value != TrackingMode.Stopped) throw new IOException("Mount recovery failed; inspect before enabling a tracking rate.");
+            if (value != TrackingMode.Stopped) RequireInspectionCleared();
             if (!Recovering) { intentionalStop = value == TrackingMode.Stopped; Health.Intent(!intentionalStop); } upstream.TrackingMode = value;
         }
     }
     private async Task<T> Motion<T>(Func<Task<T>> operation, bool stopIntent = false)
     {
-        if (recoveryFailed) throw new IOException("Mount recovery failed; further motion, including park/unpark, is blocked until inspection is cleared.");
+        RequireInspectionCleared();
         if (!Recovering && stopIntent) { intentionalStop = true; Health.Intent(false); }
         Interlocked.Increment(ref commandedMotion);
         try { return await operation().ConfigureAwait(false); }
@@ -154,7 +160,7 @@ public sealed partial class RegainMount : BaseINPC, ITelescope, IDisposable
     public Task<bool> SlewToCoordinates(Coordinates coordinates, CancellationToken token) => Motion(() => upstream.SlewToCoordinates(coordinates, token));
     public Task<bool> SlewToAltAz(TopocentricCoordinates coordinates, CancellationToken token) => Motion(() => upstream.SlewToAltAz(coordinates, token));
     public Task<bool> MeridianFlip(Coordinates targetCoordinates, CancellationToken token) => Motion(() => upstream.MeridianFlip(targetCoordinates, token));
-    public bool Sync(Coordinates coordinates) { try { return upstream.Sync(coordinates); } finally { if (!Recovering) Health.ResetPositionBaseline(); } }
+    public bool Sync(Coordinates coordinates) { RequireInspectionCleared(); try { return upstream.Sync(coordinates); } finally { if (!Recovering) Health.ResetPositionBaseline(); } }
     internal IDisposable BeginRecovery()
     {
         lock (gate) {
@@ -173,6 +179,18 @@ public sealed partial class RegainMount : BaseINPC, ITelescope, IDisposable
     internal void Recovered(bool tracking) { intentionalStop = !tracking; Health.Intent(tracking); }
     internal void RecoveryFailed() { recoveryFailed = true; intentionalStop = true; Health.Intent(false); }
     internal void ClearRecoveryFailure() { recoveryFailed = false; intentionalStop = true; Health.Intent(false); }
+    private void RefreshFailureFence() { if (!Recovering && failureJournal.Required(Id)) RecoveryFailed(); }
+    private void RequireInspectionCleared()
+    {
+        RefreshFailureFence();
+        if (recoveryFailed) throw new IOException("Mount recovery failed; motion and tracking enable are blocked until inspection is cleared.");
+    }
+    internal bool StoppedForInspection {
+        get {
+            try { return !IsDisposed && upstream.Connected && !upstream.TrackingEnabled && !upstream.Slewing; }
+            catch (Exception error) { Logger.Error("Regain cannot confirm mount stopped before inspection: " + error); return false; }
+        }
+    }
     public void Dispose()
     {
         lock (gate) {

@@ -6,6 +6,7 @@ namespace Regain.Core;
 /// <summary>A durable no-replay fence, held open until the actual vendor operation ends.</summary>
 public sealed class MountRecoveryJournal(string directory)
 {
+    public static string DefaultDirectory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PulsarFab", "Regain", "MountRecovery");
     private string PathFor(string mountId) => Path.Combine(directory,
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(mountId))) + ".pending");
     public bool Required(string mountId) => File.Exists(PathFor(mountId));

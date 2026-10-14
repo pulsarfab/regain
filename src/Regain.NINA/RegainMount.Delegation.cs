@@ -4,10 +4,10 @@ using NINA.Equipment.Interfaces;
 namespace Regain.NINA;
 public sealed partial class RegainMount
 {
-    public string Action(string actionName, string actionParameters) => upstream.Action(actionName, actionParameters);
-    public string SendCommandString(string command, bool raw = true) => upstream.SendCommandString(command, raw);
-    public bool SendCommandBool(string command, bool raw = true) => upstream.SendCommandBool(command, raw);
-    public void SendCommandBlind(string command, bool raw = true) => upstream.SendCommandBlind(command, raw);
+    public string Action(string actionName, string actionParameters) { RequireInspectionCleared(); return upstream.Action(actionName, actionParameters); }
+    public string SendCommandString(string command, bool raw = true) { RequireInspectionCleared(); return upstream.SendCommandString(command, raw); }
+    public bool SendCommandBool(string command, bool raw = true) { RequireInspectionCleared(); return upstream.SendCommandBool(command, raw); }
+    public void SendCommandBlind(string command, bool raw = true) { RequireInspectionCleared(); upstream.SendCommandBlind(command, raw); }
     public Coordinates Coordinates => upstream.Coordinates;
     public double RightAscension => upstream.RightAscension;
     public string RightAscensionString => upstream.RightAscensionString;
@@ -57,20 +57,20 @@ public sealed partial class RegainMount
     public bool CanSlewAltAz => upstream.CanSlewAltAz;
     public DateTime UTCDate => upstream.UTCDate;
     public IList<(double, double)> GetAxisRates(TelescopeAxes axis) => upstream.GetAxisRates(axis);
-    public void PulseGuide(GuideDirections direction, int duration) => upstream.PulseGuide(direction, duration);
-    public void Setpark() => upstream.Setpark();
+    public void PulseGuide(GuideDirections direction, int duration) { RequireInspectionCleared(); upstream.PulseGuide(direction, duration); }
+    public void Setpark() { RequireInspectionCleared(); upstream.Setpark(); }
     public void StopSlew() => upstream.StopSlew();
     public PierSide DestinationSideOfPier(Coordinates coordinates) => upstream.DestinationSideOfPier(coordinates);
     private int manualAxes;
     public void MoveAxis(TelescopeAxes axis, double rate) {
-        if (recoveryFailed && rate != 0) throw new IOException("Mount recovery failed; inspect before moving an axis.");
+        if (rate != 0) RequireInspectionCleared();
         int bit = 1 << (int)axis;
         if (rate != 0) Interlocked.Or(ref manualAxes, bit);
         upstream.MoveAxis(axis, rate);
         if (rate == 0) { Interlocked.And(ref manualAxes, ~bit); Health.ResetPositionBaseline(); }
     }
     public void SetCustomTrackingRate(double rightAscensionRate, double declinationRate) {
-        if (recoveryFailed) throw new IOException("Mount recovery failed; inspect before setting custom tracking.");
+        RequireInspectionCleared();
         upstream.SetCustomTrackingRate(rightAscensionRate, declinationRate);
         if (!Recovering) { intentionalStop = false; Health.Intent(true); }
     }

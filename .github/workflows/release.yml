@@ -62,6 +62,18 @@ jobs:
         run: |
           $version = ./scripts/check-release-ref.ps1 -RefType $env:REF_TYPE -RefName $env:REF_NAME -Candidate:($env:CANDIDATE -eq 'true')
           "value=$version" >> $env:GITHUB_OUTPUT
+      - name: Prepare installer signing dependency
+        run: |
+          # Resolve the pinned package before the long build/test stages.
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            try {
+              Install-Module ArtifactSigning -RequiredVersion 0.1.8 -Scope CurrentUser -Force -Repository PSGallery -ErrorAction Stop
+              break
+            } catch {
+              if ($attempt -eq 3) { throw }
+              Start-Sleep -Seconds 5
+            }
+          }
       - name: Test capture recovery and NINA integration contract
         # Candidates are review artifacts alongside the branch's full CI run.
         # Keep signed installer lifecycle/package checks below unconditional.
@@ -135,7 +147,6 @@ jobs:
           SIGNING_ACCOUNT: ${{ vars.SIGNING_ACCOUNT }}
           SIGNING_PROFILE: ${{ vars.SIGNING_PROFILE }}
         run: |
-          Install-Module ArtifactSigning -RequiredVersion 0.1.8 -Scope CurrentUser -Force -Repository PSGallery
           ./scripts/build-ascom-installer.ps1 -Signed
       - uses: actions/upload-artifact@v7
         with:

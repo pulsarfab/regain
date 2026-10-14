@@ -21,8 +21,7 @@ internal sealed class MountRecoveryService
         IProfileService profiles, MountCentering centering) : this(telescope, guider,
             () => safety.GetDevice() is null || (safety.GetInfo().Connected && safety.GetInfo().IsSafe),
             () => profiles.ActiveProfile,
-            centering.CenterVerifiedAsync, new MountRecoveryJournal(Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PulsarFab", "Regain", "MountRecovery"))) { }
+            centering.CenterVerifiedAsync, new MountRecoveryJournal(MountRecoveryJournal.DefaultDirectory)) { }
     internal MountRecoveryService(ITelescopeMediator telescope, IGuiderMediator guider, Func<bool> safe, Func<object> profile,
         Func<Coordinates, IProgress<ApplicationStatus>, CancellationToken, Task> center, MountRecoveryJournal? journal = null,
         Func<IGreenSwampApi>? greenSwampApi = null)
@@ -36,10 +35,10 @@ internal sealed class MountRecoveryService
     internal bool ClearInspection()
     {
         if (HasPendingRecovery) return false;
-        if (journal is null) { (Mount ?? recoveryMount)?.ClearRecoveryFailure(); return true; }
         var selected = Mount;
         if (selected is null || (recoveryMount is not null && recoveryMount.Id != selected.Id)) return false;
-        if (!journal.ClearAfterInspection(selected.Id)) return false;
+        if (!selected.StoppedForInspection) return false;
+        if (journal is not null && !journal.ClearAfterInspection(selected.Id)) return false;
         selected.ClearRecoveryFailure(); return true;
     }
     internal async Task AbortSelectedAsync(RegainMount? selected)
@@ -154,6 +153,10 @@ internal sealed class MountRecoveryService
                 }
                 await sensorOperation.ConfigureAwait(false);
             } else {
+                // NINA's ASCOM adapter logs some FindHome errors and returns
+                // normally. A pre-existing AtHome=true could otherwise let a
+                // failed command pass as verified homing and start a return slew.
+                if (mount.AtHome) throw new IOException("Mount already reports home; a fresh ASCOM homing result cannot be verified. Inspect before continuing.");
                 Report("Homing mount through ASCOM FindHome");
                 if (!await telescope.FindHome(progress, recoveryToken).ConfigureAwait(false)) throw new IOException("Homing was not acknowledged.");
                 Guard();
