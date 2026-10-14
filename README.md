@@ -24,6 +24,15 @@ integrations only. See the
 
 ## What do you want to do?
 
+### Recover an ASCOM mount that stops tracking
+
+In development: the NINA mount provider wraps your installed ASCOM driver and
+adds an opt-in recovery action and trigger. It can detect tracking loss while
+the driver remains connected, then home, return to the active target, restore
+tracking and settle guiding. Failed recovery stops the sequence and requires
+inspection before another attempt. This is not included in v0.6.1.5.
+[Mount recovery setup and limits](docs/ascom-mount-recovery.md).
+
 ### Save an exposure after a failed download
 
 Choose **Direct USB (experimental)** with an ASI2600MM Pro/Duo main sensor,
