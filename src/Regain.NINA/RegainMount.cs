@@ -42,6 +42,7 @@ public sealed partial class RegainMount : BaseINPC, ITelescope, IDisposable
     }
     private void Changed(object? sender, PropertyChangedEventArgs e) => RaisePropertyChanged(e.PropertyName);
     public string Id => "Regain.Mount/" + Uri.EscapeDataString(upstream.Id);
+    internal bool IsGreenSwamp => string.Equals(upstream.Id, "ASCOM.GS.Sky.Telescope", StringComparison.OrdinalIgnoreCase);
     public string Name => upstream.Name;
     public string DisplayName => "PulsarFab regain Mount — " + upstream.DisplayName;
     public string Category => "PulsarFab regain";

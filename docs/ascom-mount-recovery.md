@@ -32,6 +32,9 @@ explicitly reached in a target sequence.
 | `LostTrackingSeconds` | 5 seconds | Required duration of unexpected tracking loss, connection failure, invalid position, or an uncommanded coordinate jump. |
 | `CoordinateJumpDegrees` | 5 degrees | Angular jump from the last healthy celestial position. RA wrap and polar geometry use spherical separation. |
 | `MotionTimeoutSeconds` | 180 seconds | Total recovery deadline, including homing, return slew, centering and guiding. Range 10–900 seconds. |
+| `GreenSwampAutoHome` | On | For `ASCOM.GS.Sky.Telescope`, use GSS sensor AutoHome instead of its coordinate-only ASCOM FindHome. Other drivers are unaffected. |
+| `GreenSwampSearchDegrees` | 100 degrees | Maximum GSS sensor search, 20–179 degrees. A failed search is never extended or retried automatically. |
+| `GreenSwampDeclinationOffsetDegrees` | 0 degrees | GSS's declination offset for the sensor home, −90–90 degrees; configure for your mounting arrangement. |
 
 An explicit stop-tracking, park, or home command through NINA disarms recovery.
 Commanded slews, flips and manual-axis movement suppress position-jump detection.
@@ -64,6 +67,57 @@ If tracking was intentionally disabled, the action performs no movement and
 does not enable tracking. Sidereal, lunar, solar, King and finite custom rates
 use the same saved-rate path. Homing must be supported and trustworthy on the
 specific mount; the wrapper does not infer physical position from reset telemetry.
+
+## Green Swamp Server sensor AutoHome
+
+The GSS sensor path is under development after v0.6.1.6. The basic wrapper in
+that release uses standard ASCOM FindHome for every driver.
+
+For the registered **ASCOM.GS.Sky.Telescope** driver, sensor AutoHome is enabled
+by default in the recovery action and trigger. Regain connects to the installed
+**GS.SkyApi** COM interface in the same GSS server. GSS keeps ownership of the
+serial port. Driver identity selects this path; a similar display name does not.
+
+GSS must be connected to a mount with home sensors. Regain stops guiding and
+tracking, confirms both axes stopped, and temporarily disables GSS's processing
+of ASCOM movement commands. It calls `AutoHomeStart(searchDegrees, decOffset)`
+once, observes `IsAutoHomeRunning` start and finish, checks `LastAutoHomeError`,
+and requires both axes stopped, `AtHome` and no slew before restoring ASCOM
+movement and continuing the normal target/centering/guiding recovery.
+
+No sensors, an unavailable API, a rejected start, an incomplete search, uncertain
+home state or a failed API call stops recovery. There is no automatic fallback to
+GSS's ordinary FindHome: that operation only slews to GSS's stored home coordinates
+and cannot reconstruct lost axis position. You can explicitly turn off
+`GreenSwampAutoHome` to use ordinary FindHome when coordinate homing is appropriate.
+
+Cancel from NINA to cancel the entire recovery. Regain calls `AutoHomeStop()` and
+keeps the recovery operation owned until GSS reports homing ended and both axes
+stopped. ASCOM movement remains disabled during that wait. A lost connection or
+blocked COM call can outlive the sequence deadline; the durable inspection fence
+prevents another attempt. The helper never closes GSS or opens its serial port.
+
+GSS 1.2.2.7's `LastAutoHomeError` getter dereferences a null exception after a
+successful start. Regain logs and normalizes only that getter's null-reference
+failure (`E_POINTER` over COM); other errors fail recovery. GSS also leaves this
+field empty for a stop requested in its own UI. The API therefore does not provide
+an independent per-axis success result: completion still depends on its running,
+stopped-axis and home telemetry. A UI stop at an already-valid home position can
+look like completion. Use NINA cancellation when recovery must not resume.
+
+Configure the search and offset for your mount and cable travel. Sensor search
+can move a mount whose original position is unknown, and plate solving happens
+only after homing. Physical GSS sensor-homing acceptance remains required. GSS's
+simulator does not pass this API's SkyWatcher-only `CanHomeSensors` getter, so a
+GSS simulator run cannot certify this sensor path.
+
+Protocol references: [GSS scripting API](https://greenswamp.org/?docs=gs-server-overview%2Fscripting-api),
+[Home versus AutoHome](https://greenswamp.org/?docs=gs-server-overview%2Fmain-tab%2Fbutton-control),
+and inspected upstream commit
+[`03df875`](https://github.com/rmorgan001/GSServer/tree/03df8752eab71856b84ca9f5a5febc28e8de6ed6):
+[`GS.SkyApi/Sky.cs`](https://github.com/rmorgan001/GSServer/blob/03df8752eab71856b84ca9f5a5febc28e8de6ed6/GS.SkyApi/Sky.cs)
+and [`SkyServer.AutoHomeAsync`](https://github.com/rmorgan001/GSServer/blob/03df8752eab71856b84ca9f5a5febc28e8de6ed6/GS.Server/SkyTelescope/SkyServer.cs).
+Regain uses the public COM interface without bundling GSS code or binaries.
 
 ## Failure and cancellation
 
@@ -107,6 +161,16 @@ home/slew/center/guiding order, failed slews, unsafe transitions, cancellation
 with a vendor operation still pending, deadline expiry during a blocked getter,
 NINA sequence save/reload fencing, and centering without premature guiding.
 These are deterministic fixtures, not AM7 hardware certification.
+
+GSS fixtures cover the full stop-guiding/sensor-home/return/center/guiding path,
+late-bound API members, settings editing and NINA sequence serialization,
+unsupported/busy/disconnected/parked servers, failed and unacknowledged starts,
+missing home confirmation, safety changes and cancellation with homing still
+running. They verify no coordinate-home fallback and retained ownership until
+the real server operation stops. These are API fixtures, not physical sensor tests.
+The development sensor-home change passes the full Core and NINA suites (183
+and 645 tests; five explicit hardware/COM skips). Its WPF settings test runs
+outside parallel UI collections to avoid WPF schema/type-initialization deadlock.
 
 Review regression tests also use NINA's real running sequence container to
 verify interruption cannot await its own action, allow cached tracking telemetry

@@ -62,9 +62,9 @@ public sealed class MountRecoveryTests
         public TrackingRate Rate = new() { TrackingMode = TrackingMode.Sidereal };
         public Coordinates? SlewTarget;
         public Func<CancellationToken, Task>? OnHome;
-        public Rig(MountRecoveryJournal? journal = null)
+        public Rig(MountRecoveryJournal? journal = null, Func<IGreenSwampApi>? greenSwampApi = null)
         {
-            Upstream.SetupGet(m => m.Id).Returns("ASCOM.Fixture.Telescope");
+            Upstream.SetupGet(m => m.Id).Returns(greenSwampApi is null ? "ASCOM.Fixture.Telescope" : "ASCOM.GS.Sky.Telescope");
             Upstream.SetupGet(m => m.Name).Returns("Fixture AM7");
             Upstream.SetupGet(m => m.Connected).Returns(true);
             Upstream.SetupGet(m => m.CanFindHome).Returns(true);
@@ -89,13 +89,144 @@ public sealed class MountRecoveryTests
             Guider.Setup(g => g.StopGuiding(It.IsAny<CancellationToken>())).Returns((CancellationToken _) => { Calls.Add("guide:stop"); Guiding = false; return Task.FromResult(true); });
             Guider.Setup(g => g.StartGuiding(false,It.IsAny<IProgress<ApplicationStatus>>(),It.IsAny<CancellationToken>())).Returns((bool _,IProgress<ApplicationStatus> _,CancellationToken _) => { Calls.Add("guide:start"); Guiding = true; return Task.FromResult(true); });
             object profile = new();
-            Service = new(Telescope.Object, Guider.Object, () => Safe, () => profile, (_,_,_) => { Calls.Add("center"); if (CenterFails) throw new IOException("No solution"); return Task.CompletedTask; }, journal);
+            Service = new(Telescope.Object, Guider.Object, () => Safe, () => profile, (_,_,_) => { Calls.Add("center"); if (CenterFails) throw new IOException("No solution"); return Task.CompletedTask; }, journal, greenSwampApi);
             Mount.Observe();
         }
         public void Fault() { Tracking = false; Mount.Observe(); Clock.Advance(5); Mount.Observe(); Assert.NotNull(Mount.Health.Fault); }
         public void Dispose() { Assert.False(Mount.Recovering); Mount.Dispose(); }
     }
     private static Coordinates Target => new(3.5, 45, Epoch.J2000, Coordinates.RAType.Hours);
+    private sealed class SensorHome : IGreenSwampApi
+    {
+        public Rig Rig = null!;
+        public bool AscomOn { get; set; } = true;
+        public bool IsMountRunning { get; set; } = true;
+        public bool IsConnected { get; set; } = true;
+        public bool IsParked { get; set; }
+        public bool CanHomeSensors { get; set; } = true;
+        public string LastAutoHomeError { get; set; } = "";
+        public volatile bool Running, Disposed;
+        public bool AutoComplete = true, Acknowledge = true, StartThrows, HomeOnComplete = true;
+        public volatile bool StopRequested;
+        public int Starts, Stops, Reads, DegreeLimit, Offset, ThreadId;
+        public ApartmentState Apartment;
+        public readonly TaskCompletionSource Entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public Action? OnComplete;
+        public bool IsAutoHomeRunning {
+            get {
+                if (Running && AutoComplete && ++Reads >= 3) {
+                    Running = false; Rig.Home = HomeOnComplete; OnComplete?.Invoke();
+                }
+                return Running;
+            }
+        }
+        public bool IsFullStop(int axis) => !Rig.Tracking && !Running;
+        public void AutoHomeStart(int degreeLimit, int offsetDec) {
+            Assert.False(AscomOn); Assert.False(Rig.Tracking); Assert.False(Rig.Guiding);
+            Starts++; DegreeLimit = degreeLimit; Offset = offsetDec;
+            ThreadId = Environment.CurrentManagedThreadId; Apartment = Thread.CurrentThread.GetApartmentState();
+            Rig.Calls.Add("sensor:home"); Running = Acknowledge; Entered.TrySetResult();
+            if (StartThrows) throw new IOException("COM return failed after start");
+        }
+        public void AutoHomeStop() { Stops++; StopRequested = true; }
+        public void Dispose() { Disposed = true; }
+    }
+    [Fact] public async Task GreenSwampUsesSensorHomeThenTheExistingFullRecoveryPipeline()
+    {
+        var api = new SensorHome(); int connectionThread = 0;
+        using var rig = new Rig(greenSwampApi: () => { connectionThread = Environment.CurrentManagedThreadId; return api; });
+        api.Rig = rig; rig.Fault(); rig.Upstream.SetupGet(m => m.CanFindHome).Returns(false);
+        await rig.Service.RecoverAsync(Target, new() { GreenSwampSearchDegrees = 75, GreenSwampDeclinationOffsetDegrees = -90 }, new Progress<ApplicationStatus>(), default);
+        Assert.Equal(1, api.Starts); Assert.Equal(0, api.Stops); Assert.Equal(75, api.DegreeLimit); Assert.Equal(-90, api.Offset);
+        Assert.True(api.AscomOn); Assert.True(api.Disposed); Assert.Equal(ApartmentState.STA, api.Apartment); Assert.Equal(connectionThread, api.ThreadId);
+        Assert.DoesNotContain("home", rig.Calls); Assert.True(rig.Calls.IndexOf("guide:stop") < rig.Calls.IndexOf("sensor:home"));
+        Assert.True(rig.Calls.IndexOf("sensor:home") < rig.Calls.IndexOf("slew"));
+        Assert.True(rig.Calls.IndexOf("center") < rig.Calls.IndexOf("guide:start"));
+        Assert.Equal(3.5, rig.SlewTarget!.RA); Assert.True(rig.Tracking); Assert.True(rig.Guiding); Assert.Null(rig.Mount.Health.Fault);
+    }
+    [Theory] [InlineData("sensors")] [InlineData("busy")] [InlineData("gate")] [InlineData("disconnected")] [InlineData("parked")]
+    public async Task GreenSwampPreflightRefusesUnsupportedOrAlreadyOwnedServer(string failure)
+    {
+        var api = new SensorHome(); using var rig = new Rig(greenSwampApi: () => api); api.Rig = rig; rig.Fault();
+        if (failure == "sensors") api.CanHomeSensors = false;
+        if (failure == "busy") api.Running = true;
+        if (failure == "gate") api.AscomOn = false;
+        if (failure == "disconnected") api.IsConnected = false;
+        if (failure == "parked") api.IsParked = true;
+        api.AutoComplete = false;
+        await Assert.ThrowsAsync<IOException>(() => rig.Service.RecoverAsync(Target, new(), new Progress<ApplicationStatus>(), default));
+        Assert.Equal(0, api.Starts); Assert.Equal(0, api.Stops); Assert.Equal(failure != "gate", api.AscomOn);
+        Assert.DoesNotContain("home", rig.Calls); Assert.DoesNotContain("slew", rig.Calls); Assert.DoesNotContain("guide:start", rig.Calls);
+        Assert.True(api.Disposed);
+    }
+    [Fact] public async Task GreenSwampCoordinateHomeRequiresExplicitOptOutAndDoesNotOpenSensorApi()
+    {
+        using var rig = new Rig(greenSwampApi: () => throw new Exception("Should not open API")); rig.Fault();
+        await rig.Service.RecoverAsync(Target, new() { GreenSwampAutoHome = false }, new Progress<ApplicationStatus>(), default);
+        Assert.Contains("home", rig.Calls); Assert.Contains("center", rig.Calls);
+    }
+    [Fact] public async Task GreenSwampNameAloneCannotSelectTheGlobalServerApi()
+    {
+        using var rig = new Rig(greenSwampApi: () => throw new Exception("Wrong driver"));
+        rig.Upstream.SetupGet(m => m.Id).Returns("ASCOM.Other.Telescope"); rig.Upstream.SetupGet(m => m.Name).Returns("Green Swamp"); rig.Fault();
+        await rig.Service.RecoverAsync(Target, new(), new Progress<ApplicationStatus>(), default);
+        Assert.Contains("home", rig.Calls);
+    }
+    [Theory] [InlineData("error")] [InlineData("no-ack")] [InlineData("not-home")]
+    public async Task GreenSwampUncertainCompletionCannotSlewOrResumeAndKeepsDurableFence(string failure)
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "regain-gss-" + Guid.NewGuid());
+        try {
+            var api = new SensorHome(); using var rig = new Rig(new MountRecoveryJournal(directory), () => api); api.Rig = rig; rig.Fault();
+            if (failure == "error") api.LastAutoHomeError = "Incomplete: RA home sensor not found";
+            if (failure == "no-ack") api.Acknowledge = false;
+            if (failure == "not-home") api.HomeOnComplete = false;
+            await Assert.ThrowsAsync<IOException>(() => rig.Service.RecoverAsync(Target, new(), new Progress<ApplicationStatus>(), default));
+            Assert.Equal(1, api.Starts); Assert.Equal(1, api.Stops); Assert.True(api.AscomOn); Assert.True(api.Disposed);
+            Assert.DoesNotContain("home", rig.Calls); Assert.DoesNotContain("slew", rig.Calls); Assert.DoesNotContain("guide:start", rig.Calls);
+            Assert.True(rig.Service.RequiresInspection); Assert.True(rig.Service.ClearInspection());
+        } finally { Directory.Delete(directory, recursive: true); }
+    }
+    [Theory] [InlineData(false,false)] [InlineData(true,false)] [InlineData(false,true)]
+    public async Task GreenSwampCancellationDeadlineAndAmbiguousStartRetainOwnershipUntilActualServerStop(bool ambiguousStart, bool deadline)
+    {
+        var api = new SensorHome { AutoComplete = false, StartThrows = ambiguousStart };
+        using var rig = new Rig(greenSwampApi: () => api); api.Rig = rig; rig.Fault();
+        using var cancellation = new CancellationTokenSource();
+        var recovery = rig.Service.RecoverAsync(Target, new() { MotionTimeoutSeconds = deadline ? 10 : 180 }, new Progress<ApplicationStatus>(), cancellation.Token);
+        await api.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        // For an ambiguous start return, cleanup is already waiting. For a
+        // normal start this exercises cancellation of the remote async homing.
+        if (ambiguousStart) {
+            using var stopLimit = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            while (!api.StopRequested) await Task.Delay(10, stopLimit.Token);
+        }
+        if (deadline) await Assert.ThrowsAsync<TimeoutException>(() => recovery);
+        else { cancellation.Cancel(); await Assert.ThrowsAnyAsync<OperationCanceledException>(() => recovery); }
+        using var limit = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        while (!api.StopRequested) await Task.Delay(10, limit.Token);
+        Assert.True(rig.Mount.Recovering); Assert.False(api.AscomOn); Assert.False(api.Disposed);
+        Assert.False(rig.Service.ClearInspection()); Assert.Throws<InvalidOperationException>(() => rig.Mount.BeginRecovery());
+        api.Running = false;
+        while (rig.Mount.Recovering) await Task.Delay(10, limit.Token);
+        Assert.True(api.AscomOn); Assert.True(api.Disposed); Assert.Equal(1, api.Stops);
+        Assert.DoesNotContain("slew", rig.Calls); Assert.DoesNotContain("guide:start", rig.Calls);
+    }
+    [Fact] public async Task GreenSwampCannotStartSensorSearchWhileTrackingStopIsUnconfirmed()
+    {
+        var api = new SensorHome(); using var rig = new Rig(greenSwampApi: () => api); api.Rig = rig;
+        rig.Upstream.SetupSet(m => m.TrackingEnabled = It.IsAny<bool>()); // Driver ignores the stop write.
+        await Assert.ThrowsAsync<IOException>(() => rig.Service.RecoverAsync(Target, new(), new Progress<ApplicationStatus>(), default));
+        Assert.Equal(0, api.Starts); Assert.Equal(0, api.Stops); Assert.True(api.AscomOn);
+        Assert.DoesNotContain("home", rig.Calls); Assert.DoesNotContain("slew", rig.Calls);
+    }
+    [Fact] public async Task GreenSwampSafetyChangeAfterSensorSearchPreventsReturnSlew()
+    {
+        var api = new SensorHome(); using var rig = new Rig(greenSwampApi: () => api); api.Rig = rig; rig.Fault();
+        api.OnComplete = () => rig.Safe = false;
+        await Assert.ThrowsAsync<IOException>(() => rig.Service.RecoverAsync(Target, new(), new Progress<ApplicationStatus>(), default));
+        Assert.True(api.AscomOn); Assert.Equal(1, api.Stops); Assert.DoesNotContain("slew", rig.Calls);
+    }
     private static Mock<IDeepSkyObjectContainer> TargetContext()
     {
         var parent = new Mock<IDeepSkyObjectContainer>();
@@ -245,7 +376,8 @@ public sealed class MountRecoveryTests
     {
         using var rig = new Rig();
         var source = new RecoverMountOnTrackingLoss(rig.Service) {
-            ReconciliationRequired = true, Options = new() { LostTrackingSeconds = 9, MotionTimeoutSeconds = 240, CoordinateJumpDegrees = 2 }
+            ReconciliationRequired = true, Options = new() { LostTrackingSeconds = 9, MotionTimeoutSeconds = 240, CoordinateJumpDegrees = 2,
+                GreenSwampAutoHome = false, GreenSwampSearchDegrees = 120, GreenSwampDeclinationOffsetDegrees = 90 }
         };
         var factory = new Mock<ISequencerFactory>();
         factory.Setup(f => f.GetTrigger<RecoverMountOnTrackingLoss>()).Returns(() => new(rig.Service));

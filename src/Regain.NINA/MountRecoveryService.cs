@@ -16,6 +16,7 @@ internal sealed class MountRecoveryService
     private readonly Func<object> profile;
     private readonly Func<Coordinates, IProgress<ApplicationStatus>, CancellationToken, Task> center;
     private readonly MountRecoveryJournal? journal;
+    private readonly Func<IGreenSwampApi> greenSwampApi;
     internal MountRecoveryService(ITelescopeMediator telescope, IGuiderMediator guider, ISafetyMonitorMediator safety,
         IProfileService profiles, MountCentering centering) : this(telescope, guider,
             () => safety.GetDevice() is null || (safety.GetInfo().Connected && safety.GetInfo().IsSafe),
@@ -23,8 +24,10 @@ internal sealed class MountRecoveryService
             centering.CenterVerifiedAsync, new MountRecoveryJournal(Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PulsarFab", "Regain", "MountRecovery"))) { }
     internal MountRecoveryService(ITelescopeMediator telescope, IGuiderMediator guider, Func<bool> safe, Func<object> profile,
-        Func<Coordinates, IProgress<ApplicationStatus>, CancellationToken, Task> center, MountRecoveryJournal? journal = null)
-    { this.telescope = telescope; this.guider = guider; this.safe = safe; this.profile = profile; this.center = center; this.journal = journal; }
+        Func<Coordinates, IProgress<ApplicationStatus>, CancellationToken, Task> center, MountRecoveryJournal? journal = null,
+        Func<IGreenSwampApi>? greenSwampApi = null)
+    { this.telescope = telescope; this.guider = guider; this.safe = safe; this.profile = profile; this.center = center; this.journal = journal;
+        this.greenSwampApi = greenSwampApi ?? GreenSwampApi.Connect; }
     internal RegainMount? Mount => telescope.GetDevice() as RegainMount;
     private RegainMount? recoveryMount;
     internal bool HasPendingRecovery => recoveryMount?.Recovering == true || Mount?.Recovering == true;
@@ -100,13 +103,18 @@ internal sealed class MountRecoveryService
             }
             Guard();
             if (mount.AtPark) throw new IOException("Mount reports parked. Inspect and unpark explicitly before recovery.");
-            if (!mount.CanFindHome || !mount.CanSlew || !mount.CanSetTrackingEnabled)
+            bool sensorHome = mount.IsGreenSwamp && options.GreenSwampAutoHome;
+            if ((!sensorHome && !mount.CanFindHome) || !mount.CanSlew || !mount.CanSetTrackingEnabled)
                 throw new IOException("Mount must support homing, coordinate slews and tracking control.");
             Guard();
-            Report("Homing mount");
-            if (!await telescope.FindHome(progress, recoveryToken).ConfigureAwait(false)) throw new IOException("Homing was not acknowledged.");
-            Guard();
-            while (!mount.AtHome || mount.Slewing) { await Task.Delay(250, recoveryToken).ConfigureAwait(false); Guard(); }
+            if (sensorHome) {
+                await GreenSwampAutoHome.RunAsync(mount, options, greenSwampApi, Guard, Report, recoveryToken).ConfigureAwait(false);
+            } else {
+                Report("Homing mount through ASCOM FindHome");
+                if (!await telescope.FindHome(progress, recoveryToken).ConfigureAwait(false)) throw new IOException("Homing was not acknowledged.");
+                Guard();
+                while (!mount.AtHome || mount.Slewing) { await Task.Delay(250, recoveryToken).ConfigureAwait(false); Guard(); }
+            }
             Guard();
             RestoreRate(mount, rate);
             Guard();

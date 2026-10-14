@@ -14,6 +14,14 @@
                 <TextBlock Text="Position jump (degrees)" VerticalAlignment="Center" />
                 <TextBox Width="65" Margin="8,0" Text="{Binding Options.CoordinateJumpDegrees, ValidatesOnExceptions=True, UpdateSourceTrigger=PropertyChanged}" />
             </WrapPanel>
+            <CheckBox Content="Use sensor AutoHome for Green Swamp Server" IsChecked="{Binding Options.GreenSwampAutoHome}" />
+            <TextBlock Text="Uses GSS's existing server and requires home sensors. Other drivers use ASCOM FindHome. No fallback to a coordinate-only home if sensor homing fails." TextWrapping="Wrap" />
+            <WrapPanel Margin="0,6">
+                <TextBlock Text="GSS search limit (degrees)" VerticalAlignment="Center" />
+                <TextBox Width="65" Margin="8,0" Text="{Binding Options.GreenSwampSearchDegrees, ValidatesOnExceptions=True, UpdateSourceTrigger=PropertyChanged}" />
+                <TextBlock Text="GSS Dec offset (degrees)" VerticalAlignment="Center" />
+                <TextBox Width="65" Margin="8,0" Text="{Binding Options.GreenSwampDeclinationOffsetDegrees, ValidatesOnExceptions=True, UpdateSourceTrigger=PropertyChanged}" />
+            </WrapPanel>
             <TextBlock Text="{Binding Outcome}" TextWrapping="Wrap" />
             <StackPanel Orientation="Horizontal">
                 <TextBlock Text="Previous recovery requires inspection" VerticalAlignment="Center" />
