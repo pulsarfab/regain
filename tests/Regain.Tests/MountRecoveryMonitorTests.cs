@@ -49,6 +49,14 @@ public sealed class MountRecoveryMonitorTests
         monitor.Observe(Good); monitor.Observe(Good with { Tracking = false }); clock.Advance(4);
         monitor.Observe(Good); clock.Advance(20); monitor.Observe(Good); Assert.Null(monitor.Fault);
     }
+    [Fact] public void DisconnectedMountCannotSuppressDetectionWithStaleSlewingState()
+    {
+        var clock = new Clock(); var monitor = new MountRecoveryMonitor(clock);
+        monitor.Observe(Good);
+        var stale = Good with { Connected = false, Slewing = true };
+        monitor.Observe(stale, commandedMotion: true); clock.Advance(5);
+        monitor.Observe(stale, commandedMotion: true); Assert.Equal("Mount disconnected", monitor.Fault);
+    }
     [Theory] [InlineData(0,180,5)] [InlineData(5,0,5)] [InlineData(5,180,0)] [InlineData(double.NaN,180,5)]
     public void InvalidConfigurationCannotAuthorizeRecovery(double loss, double timeout, double jump) =>
         Assert.Throws<ArgumentOutOfRangeException>(() => new MountRecoveryOptions { LostTrackingSeconds = loss, MotionTimeoutSeconds = timeout, CoordinateJumpDegrees = jump }.Validate());

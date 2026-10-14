@@ -39,7 +39,7 @@ public sealed class MountRecoveryMonitor(TimeProvider? clock = null)
     {
         lock (gate) {
             if (fault is not null) return false; // Re-enabling tracking alone cannot reconcile lost pointing.
-            if (commandedMotion || value.Slewing) { suspectSince = null; good = null; return false; }
+            if (value.Connected && (commandedMotion || value.Slewing)) { suspectSince = null; good = null; return false; }
             bool finite = double.IsFinite(value.RightAscensionHours) && value.RightAscensionHours is >= 0 and < 24 &&
                 double.IsFinite(value.DeclinationDegrees) && value.DeclinationDegrees is >= -90 and <= 90;
             string? reason = !value.Connected ? "Mount disconnected" : !finite ? "Mount position unavailable" :

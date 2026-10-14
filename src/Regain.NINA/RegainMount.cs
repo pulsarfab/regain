@@ -82,20 +82,22 @@ public sealed partial class RegainMount : BaseINPC, ITelescope, IDisposable
     internal void Observe()
     {
         if (Recovering || disposed) return;
+        var previous = Health.Fault;
+        var reading = new MountObservation(false, false, false, double.NaN, double.NaN);
+        Exception? failure = null;
         try {
-            if (!Connected) { Health.Observe(new(false, false, false, double.NaN, double.NaN)); return; }
-            var reading = new MountObservation(Connected, upstream.TrackingEnabled, upstream.Slewing, upstream.RightAscension, upstream.Declination);
-            var previous = Health.Fault;
+            if (Connected) reading = new MountObservation(true, upstream.TrackingEnabled, upstream.Slewing, upstream.RightAscension, upstream.Declination);
             if (Health.Observe(reading, Volatile.Read(ref commandedMotion) != 0 || Volatile.Read(ref manualAxes) != 0 || intentionalStop)) {
                 var rate = upstream.TrackingRate;
                 // The adapter may return an older TrackingEnabled value while
                 // its rate already reports stopped. Keep the last good rate.
                 if (rate.TrackingMode != TrackingMode.Stopped && (rate.TrackingMode != TrackingMode.Custom ||
                     (rate.CustomRightAscensionRate is double ra && double.IsFinite(ra) && rate.CustomDeclinationRate is double dec && double.IsFinite(dec))))
-                    lock (gate) savedTrackingRate = rate;
+                    lock (gate) { if (!Recovering && !disposed) savedTrackingRate = rate; }
             }
-            if (previous is null && Health.Fault is not null) Logger.Warning($"Regain mount fault: {Health.Fault}; upstream={upstream.Id}; tracking={reading.Tracking}; RA={reading.RightAscensionHours}; Dec={reading.DeclinationDegrees}");
-        } catch { Health.Observe(new(false, false, false, double.NaN, double.NaN)); }
+        } catch (Exception error) { failure = error; Health.Observe(new(false, false, false, double.NaN, double.NaN)); }
+        if (previous is null && Health.Fault is not null)
+            Logger.Warning($"Regain mount fault: {Health.Fault}; upstream={upstream.Id}; connected={reading.Connected}; tracking={reading.Tracking}; RA={reading.RightAscensionHours}; Dec={reading.DeclinationDegrees}; error={failure?.Message}");
         RaisePropertyChanged(nameof(DriverInfo));
     }
     public void Disconnect()

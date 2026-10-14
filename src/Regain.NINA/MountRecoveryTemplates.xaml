@@ -15,7 +15,10 @@
                 <TextBox Width="65" Margin="8,0" Text="{Binding Options.CoordinateJumpDegrees, ValidatesOnExceptions=True, UpdateSourceTrigger=PropertyChanged}" />
             </WrapPanel>
             <TextBlock Text="{Binding Outcome}" TextWrapping="Wrap" />
-            <CheckBox Content="Previous recovery requires inspection" IsChecked="{Binding ReconciliationRequired, Mode=OneWay}" IsHitTestVisible="False" Focusable="False" />
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Previous recovery requires inspection" VerticalAlignment="Center" />
+                <CheckBox Margin="12,0" IsChecked="{Binding ReconciliationRequired, Mode=OneWay}" IsHitTestVisible="False" Focusable="False" />
+            </StackPanel>
             <Button Content="Allow another recovery after inspecting mount…" Click="Reconcile" HorizontalAlignment="Left" Margin="0,6" />
         </StackPanel>
     </DataTemplate>
@@ -28,6 +31,7 @@
     </DataTemplate>
     <DataTemplate DataType="{x:Type local:RecoverMountOnTrackingLoss}">
         <StackPanel>
+            <TextBlock Text="Recover Regain mount on tracking loss" FontWeight="Bold" Margin="0,4" />
             <TextBlock Text="Checks before each light exposure. A running exposure is allowed to finish; recovery never runs during another sequence instruction." TextWrapping="Wrap" />
             <ContentControl Content="{Binding}" ContentTemplate="{StaticResource MountRecoverySettings}" />
         </StackPanel>

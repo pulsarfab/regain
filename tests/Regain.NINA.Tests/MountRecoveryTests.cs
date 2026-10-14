@@ -24,6 +24,13 @@ namespace Regain.NINA.Tests;
 
 public sealed class MountRecoveryTests
 {
+    private sealed class InvokeRecovery(RecoverMount action) : SequenceItem
+    {
+        public bool Entered;
+        public override Task Execute(IProgress<ApplicationStatus> progress, CancellationToken token)
+        { Entered = true; return action.Execute(progress, token); }
+        public override object Clone() => new InvokeRecovery(action);
+    }
     private sealed class SolverFixture : MountCentering
     {
         private readonly bool success;
@@ -55,7 +62,7 @@ public sealed class MountRecoveryTests
         public TrackingRate Rate = new() { TrackingMode = TrackingMode.Sidereal };
         public Coordinates? SlewTarget;
         public Func<CancellationToken, Task>? OnHome;
-        public Rig()
+        public Rig(MountRecoveryJournal? journal = null)
         {
             Upstream.SetupGet(m => m.Id).Returns("ASCOM.Fixture.Telescope");
             Upstream.SetupGet(m => m.Name).Returns("Fixture AM7");
@@ -82,7 +89,7 @@ public sealed class MountRecoveryTests
             Guider.Setup(g => g.StopGuiding(It.IsAny<CancellationToken>())).Returns((CancellationToken _) => { Calls.Add("guide:stop"); Guiding = false; return Task.FromResult(true); });
             Guider.Setup(g => g.StartGuiding(false,It.IsAny<IProgress<ApplicationStatus>>(),It.IsAny<CancellationToken>())).Returns((bool _,IProgress<ApplicationStatus> _,CancellationToken _) => { Calls.Add("guide:start"); Guiding = true; return Task.FromResult(true); });
             object profile = new();
-            Service = new(Telescope.Object, Guider.Object, () => Safe, () => profile, (_,_,_) => { Calls.Add("center"); if (CenterFails) throw new IOException("No solution"); return Task.CompletedTask; });
+            Service = new(Telescope.Object, Guider.Object, () => Safe, () => profile, (_,_,_) => { Calls.Add("center"); if (CenterFails) throw new IOException("No solution"); return Task.CompletedTask; }, journal);
             Mount.Observe();
         }
         public void Fault() { Tracking = false; Mount.Observe(); Clock.Advance(5); Mount.Observe(); Assert.NotNull(Mount.Health.Fault); }
@@ -111,6 +118,14 @@ public sealed class MountRecoveryTests
         Assert.True(rig.Calls.IndexOf("home") < rig.Calls.IndexOf("slew"));
         Assert.True(rig.Calls.IndexOf("slew") < rig.Calls.IndexOf("center"));
         Assert.True(rig.Calls.IndexOf("center") < rig.Calls.IndexOf("guide:start"));
+    }
+    [Fact] public async Task CachedTrackingTelemetryCanCatchUpWithoutReplayingCommands()
+    {
+        using var rig = new Rig(); rig.Fault(); int staleReads = 2;
+        rig.Upstream.SetupGet(m => m.TrackingEnabled).Returns(() => rig.Tracking && Interlocked.Decrement(ref staleReads) < 0);
+        await rig.Service.RecoverAsync(Target, new(), new Progress<ApplicationStatus>(), default);
+        Assert.Equal(1, rig.Calls.Count(c => c == "home")); Assert.Equal(1, rig.Calls.Count(c => c == "slew"));
+        Assert.Null(rig.Mount.Health.Fault); Assert.True(rig.Guiding);
     }
     [Fact] public async Task IntentionallyDisabledTrackingNeverEnablesTrackingOrMoves()
     {
@@ -167,6 +182,58 @@ public sealed class MountRecoveryTests
         int prior=rig.Calls.Count;
         await Assert.ThrowsAsync<IOException>(()=>trigger.Execute(parent.Object,new Progress<ApplicationStatus>(),default));
         Assert.Equal(prior,rig.Calls.Count);
+    }
+    [Fact] public async Task FailureInsideNinasRealContainerCancelsWithoutAwaitingItself()
+    {
+        using var rig = new Rig();
+        var container = new SequenceRootContainer();
+        var action = new RecoverMount(rig.Service) { ReconciliationRequired = true };
+        action.AttachNewParent(container);
+        // Invoke Execute inside a real running container, bypassing NINA's
+        // preflight target validation so the failure handler is actually reached.
+        var invoke = new InvokeRecovery(action); invoke.AttachNewParent(container); container.Items.Add(invoke);
+        var run = container.Execute(new Progress<ApplicationStatus>(), default);
+        try { await run.WaitAsync(TimeSpan.FromSeconds(5)); } catch (OperationCanceledException) { }
+        Assert.True(invoke.Entered); Assert.True(run.IsCompleted); Assert.True(action.ReconciliationRequired); Assert.Empty(rig.Calls);
+    }
+    [Fact] public void InvalidTriggerStopsItsContainerInsteadOfFallingThroughToImaging()
+    {
+        using var rig = new Rig(); var parent = TargetContext();
+        var trigger = new RecoverMountOnTrackingLoss(rig.Service) { Options = new() { MotionTimeoutSeconds = 0 } };
+        trigger.AttachNewParent(parent.Object);
+        var light = new Mock<IExposureItem>(); light.SetupGet(e => e.ImageType).Returns("LIGHT");
+        Assert.True(trigger.ShouldTrigger(null!, light.Object)); Assert.False(trigger.Validate());
+        parent.Verify(p => p.Interrupt(), Times.Once);
+    }
+    [Fact] public async Task ChangingSelectionCannotClearFenceWhileOldMountOperationIsPending()
+    {
+        using var rig = new Rig(); rig.Fault();
+        var entered = new TaskCompletionSource(); var release = new TaskCompletionSource();
+        rig.OnHome = _ => { entered.SetResult(); return release.Task; };
+        using var cancellation = new CancellationTokenSource();
+        var recovery = rig.Service.RecoverAsync(Target, new(), new Progress<ApplicationStatus>(), cancellation.Token);
+        await entered.Task; cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => recovery);
+        rig.Telescope.Setup(t => t.GetDevice()).Returns((ITelescope)null!);
+        var action = new RecoverMount(rig.Service) { ReconciliationRequired = true };
+        Assert.False(action.AllowAfterInspection()); Assert.True(action.ReconciliationRequired);
+        release.SetResult();
+        using var limit = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        while (rig.Mount.Recovering) await Task.Delay(10, limit.Token);
+        Assert.True(action.AllowAfterInspection());
+    }
+    [Fact] public async Task LoadingAnOlderSequenceCannotBypassAnUncertainRecoveryJournal()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "regain-mount-" + Guid.NewGuid());
+        try {
+            using var rig = new Rig(new MountRecoveryJournal(directory)); rig.Fault(); rig.CenterFails = true;
+            await Assert.ThrowsAsync<IOException>(() => rig.Service.RecoverAsync(Target, new(), new Progress<ApplicationStatus>(), default));
+            var reloaded = new RecoverMount(rig.Service) { ReconciliationRequired = false };
+            Assert.True(reloaded.ReconciliationRequired); int calls = rig.Calls.Count;
+            await Assert.ThrowsAsync<IOException>(() => reloaded.Execute(new Progress<ApplicationStatus>(), default));
+            Assert.Equal(calls, rig.Calls.Count); Assert.True(reloaded.AllowAfterInspection());
+            Assert.False(reloaded.ReconciliationRequired);
+        } finally { Directory.Delete(directory, recursive: true); }
     }
     [Fact] public void ExportsActionTriggerAndMountProvider()
     {

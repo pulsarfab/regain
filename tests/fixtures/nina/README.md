@@ -14,6 +14,16 @@ SHA-256: `829859db52ce15a85454e7b76d3fc387529386ed115e17aa4ace228783deb510`.
 Size: 187392 bytes. The copy is test-only and is not included in Regain payloads.
 No installed NINA or vendor-driver paths are searched by the tests.
 
+`mount-recovery-sequence.json` is a manual installed-NINA acceptance fixture.
+Use a separate profile with the Regain-wrapped ASCOM Telescope Simulator and
+NINA Simulator Camera only. It enables sidereal tracking, waits ten seconds,
+then takes a 30-second light and a two-second light, with tracking-loss recovery
+on the target. Its celestial coordinates match the acceptance replay frame;
+replace those coordinates with the solved center of your own simulated image.
+Configure a working local plate solver and an existing image-output directory.
+Never run this fixture against a physical mount inadvertently: recovery homes
+and slews the selected mount. See `docs/ascom-mount-recovery.md` for results.
+
 NOVAS is provided by the Astronomical Applications Department of the U.S.
 Naval Observatory. Its upstream README states that it has no licensing
 requirements. The complete README is retained in `NOVAS-README.txt`, from

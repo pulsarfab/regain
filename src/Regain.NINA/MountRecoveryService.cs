@@ -15,15 +15,29 @@ internal sealed class MountRecoveryService
     private readonly Func<bool> safe;
     private readonly Func<object> profile;
     private readonly Func<Coordinates, IProgress<ApplicationStatus>, CancellationToken, Task> center;
+    private readonly MountRecoveryJournal? journal;
     internal MountRecoveryService(ITelescopeMediator telescope, IGuiderMediator guider, ISafetyMonitorMediator safety,
         IProfileService profiles, MountCentering centering) : this(telescope, guider,
             () => safety.GetDevice() is null || (safety.GetInfo().Connected && safety.GetInfo().IsSafe),
             () => profiles.ActiveProfile,
-            centering.CenterVerifiedAsync) { }
+            centering.CenterVerifiedAsync, new MountRecoveryJournal(Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PulsarFab", "Regain", "MountRecovery"))) { }
     internal MountRecoveryService(ITelescopeMediator telescope, IGuiderMediator guider, Func<bool> safe, Func<object> profile,
-        Func<Coordinates, IProgress<ApplicationStatus>, CancellationToken, Task> center)
-    { this.telescope = telescope; this.guider = guider; this.safe = safe; this.profile = profile; this.center = center; }
+        Func<Coordinates, IProgress<ApplicationStatus>, CancellationToken, Task> center, MountRecoveryJournal? journal = null)
+    { this.telescope = telescope; this.guider = guider; this.safe = safe; this.profile = profile; this.center = center; this.journal = journal; }
     internal RegainMount? Mount => telescope.GetDevice() as RegainMount;
+    private RegainMount? recoveryMount;
+    internal bool HasPendingRecovery => recoveryMount?.Recovering == true || Mount?.Recovering == true;
+    internal bool RequiresInspection => journal is not null &&
+        ((Mount is { } current && journal.Required(current.Id)) || (recoveryMount is { } previous && journal.Required(previous.Id)));
+    internal bool ClearInspection()
+    {
+        if (HasPendingRecovery) return false;
+        if (journal is null) return true;
+        var selected = Mount;
+        if (selected is null || (recoveryMount is not null && recoveryMount.Id != selected.Id)) return false;
+        return journal.ClearAfterInspection(selected.Id);
+    }
     internal async Task RecoverAsync(Coordinates target, MountRecoveryOptions options, IProgress<ApplicationStatus> progress, CancellationToken token)
     {
         options.Validate();
@@ -50,13 +64,27 @@ internal sealed class MountRecoveryService
             Logger.Info("Regain mount recovery: " + status);
             progress?.Report(new ApplicationStatus { Source = "PulsarFab regain", Status = status });
         }
+        async Task Confirm(Func<bool> condition, string failure)
+        {
+            // NINA's ASCOM adapter caches getter results independently of writes.
+            // Allow its telemetry to catch up, without replaying the command.
+            long started = System.Diagnostics.Stopwatch.GetTimestamp();
+            while (true) {
+                Guard(); bool accepted = condition(); Guard();
+                if (accepted) return;
+                if (System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalSeconds >= 5) throw new IOException(failure);
+                await Task.Delay(250, recoveryToken).ConfigureAwait(false);
+            }
+        }
         var ownership = mount.BeginRecovery();
+        recoveryMount = mount;
         async Task Work()
         {
             // Own the wrapper until the real operation terminates, even if a
             // cancellation/deadline makes the caller stop awaiting a vendor task.
             using var retainedOwnership = ownership;
             Guard();
+            using var attempt = journal?.Begin(mount.Id);
             bool guided = guider.GetDevice() is IGuider { Connected: true } guide &&
                 new[] { "Guiding", "LostLock", "Dithering", "Settling" }.Contains(guide.State, StringComparer.OrdinalIgnoreCase);
             bool guiderConnected = guider.GetDevice() is { Connected: true };
@@ -84,7 +112,7 @@ internal sealed class MountRecoveryService
             Guard();
             mount.TrackingEnabled = true;
             Guard();
-            if (!mount.TrackingEnabled) throw new IOException("Mount did not enable tracking after homing.");
+            await Confirm(() => mount.TrackingEnabled, "Mount did not enable tracking after homing.").ConfigureAwait(false);
             Guard(); Report("Returning to saved sequence target");
             if (!await telescope.SlewToCoordinatesAsync(target, recoveryToken).ConfigureAwait(false)) throw new IOException("Return slew failed; it will not be replayed.");
             Guard(); Report("Plate-solving and centering saved target");
@@ -94,8 +122,8 @@ internal sealed class MountRecoveryService
             Guard();
             mount.TrackingEnabled = tracking;
             Guard();
-            if (mount.TrackingEnabled != tracking || (tracking && !SameRate(mount.TrackingRate, rate)))
-                throw new IOException("Mount did not restore the saved tracking state and rate.");
+            await Confirm(() => mount.TrackingEnabled == tracking && (!tracking || SameRate(mount.TrackingRate, rate)),
+                "Mount did not restore the saved tracking state and rate.").ConfigureAwait(false);
             Guard();
             if (guided && tracking) {
                 Report("Restoring guiding and waiting for NINA settling");
@@ -104,6 +132,7 @@ internal sealed class MountRecoveryService
             Guard();
             if (mount.Slewing || mount.TrackingEnabled != tracking) throw new IOException("Mount state changed before recovery completed.");
             Guard();
+            attempt?.Complete();
             mount.Recovered(tracking); Report("Mount recovery complete");
         }
         var work = Task.Run(Work, CancellationToken.None);

@@ -1,5 +1,6 @@
 using System.ComponentModel.Composition;
 using NINA.Core.Model;
+using NINA.Core.Utility;
 using NINA.Equipment.Interfaces.Mediator;
 using NINA.Profile.Interfaces;
 using NINA.Sequencer.Container;
@@ -26,12 +27,13 @@ public sealed class RecoverMount : SequenceItem, IValidatable
         IProfileService profiles, MountCentering centering) : this(new(telescope, guider, safety, profiles, centering)) { }
     internal RecoverMount(MountRecoveryService service) { this.service = service; }
     [JsonProperty] public MountRecoveryOptions Options { get; set; } = new();
-    [JsonProperty] public bool ReconciliationRequired { get; set; }
+    private bool reconciliationRequired;
+    [JsonProperty] public bool ReconciliationRequired { get => reconciliationRequired || service.RequiresInspection; set => reconciliationRequired = value; }
     public string Outcome { get; private set; } = "Homes and moves the selected mount when executed.";
     public IList<string> Issues { get; set; } = [];
     internal bool AllowAfterInspection()
     {
-        if (service.Mount?.Recovering == true) return false;
+        if (!service.ClearInspection()) return false;
         ReconciliationRequired = false; RaisePropertyChanged(nameof(ReconciliationRequired)); return true;
     }
     public bool Validate()
@@ -56,11 +58,17 @@ public sealed class RecoverMount : SequenceItem, IValidatable
             Outcome = "Recovery stopped. Inspect mount before allowing another operation.";
             // Triggers have no instruction retry policy of their own. Interrupt
             // the sequence explicitly so failure cannot fall through to imaging.
-            var root = ItemUtility.GetRootContainer(Parent);
-            if (root is not null) await root.Interrupt().ConfigureAwait(false);
-            else if (Parent is not null) await Parent.Interrupt().ConfigureAwait(false);
+            RequestInterrupt(Parent);
             throw;
         } finally { RaisePropertyChanged(nameof(Outcome)); RaisePropertyChanged(nameof(ReconciliationRequired)); }
+    }
+    internal static void RequestInterrupt(ISequenceContainer? parent)
+    {
+        // Interrupt cancels synchronously, then awaits the container's execution
+        // task, which includes this action. Awaiting it here deadlocks NINA.
+        var pending = (ItemUtility.GetRootContainer(parent) ?? parent)?.Interrupt();
+        if (pending is not null) _ = pending.ContinueWith(task => Logger.Error(task.Exception!.GetBaseException()),
+            CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
     }
     public override object Clone()
     {
@@ -86,19 +94,28 @@ public sealed class RecoverMountOnTrackingLoss : SequenceTrigger, IValidatable
     [JsonProperty] public bool ReconciliationRequired { get => action.ReconciliationRequired; set => action.ReconciliationRequired = value; }
     public IList<string> Issues { get => action.Issues; set => action.Issues = value; }
     public string Outcome => action.Outcome;
-    public bool Validate() { action.AttachNewParent(Parent); return ReconciliationRequired || action.Validate(); }
+    public bool Validate()
+    {
+        action.AttachNewParent(Parent);
+        bool valid = ReconciliationRequired || action.Validate();
+        // NINA catches trigger validation failures and otherwise continues to
+        // the exposure. Cancel the container before returning an invalid result.
+        if (!valid) RecoverMount.RequestInterrupt(Parent);
+        return valid;
+    }
     internal bool AllowAfterInspection() { bool allowed = action.AllowAfterInspection(); RaisePropertyChanged(nameof(ReconciliationRequired)); return allowed; }
     public override bool ShouldTrigger(ISequenceItem previousItem, ISequenceItem nextItem)
     {
         if (nextItem is not IExposureItem { ImageType: "LIGHT" }) return false;
         var mount = service.Mount;
         if (mount is null) return ReconciliationRequired;
-        mount.Health.Options = Options with { };
+        try { mount.Health.Options = Options with { }; }
+        catch (ArgumentException) { return true; } // Validate must stop imaging, not throw inside ShouldTrigger.
         return ReconciliationRequired || mount.Health.Fault is not null;
     }
     public override async Task Execute(ISequenceContainer context, IProgress<ApplicationStatus> progress, CancellationToken token)
     {
-        action.AttachNewParent(Parent ?? context);
+        action.AttachNewParent(context);
         try { await action.Execute(progress, token).ConfigureAwait(false); }
         finally { RaisePropertyChanged(nameof(Outcome)); RaisePropertyChanged(nameof(ReconciliationRequired)); }
     }
