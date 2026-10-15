@@ -111,6 +111,13 @@ internal static class Settings
         var serial = new TextBox { Text = remembered?.Serial ?? "", Margin = new Thickness(0, 2, 0, 8),
             ToolTip = "Saved after connecting. Enter a serial to select between cameras of the same model." };
         panel.Children.Add(serial);
+        panel.Children.Add(new TextBlock { Text = "Save camera serial number in image metadata", TextWrapping = TextWrapping.Wrap });
+        var saveCameraSerial = new CheckBox { IsChecked = remembered?.SaveCameraSerialNumber == true,
+            HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 2, 0, 8),
+            ToolTip = "Off by default. Writes the connected camera's hardware serial as CAMSER in FITS/XISF metadata. Applies on the next connection." };
+        System.Windows.Automation.AutomationProperties.SetAutomationId(saveCameraSerial, "camera-save-serial-number");
+        System.Windows.Automation.AutomationProperties.SetName(saveCameraSerial, "Save camera serial number in image metadata");
+        panel.Children.Add(saveCameraSerial);
         var cameraStatus = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) };
         panel.Children.Add(cameraStatus);
         string? selectedName = remembered?.Camera.Name;
@@ -141,7 +148,7 @@ internal static class Settings
                         var choice = picker.SelectedItem as CameraChoice ?? throw new InvalidOperationException("Choose a camera before enabling USB reset.");
                         // Enabling USB recovery is an immediate action, including the camera identity it approves.
                         Cameras.Save(new CameraSelection(choice.Camera, serial.Text.Trim().ToLowerInvariant(),
-                            direct.IsChecked == true, fallback.IsChecked == true, remembered?.FanSpeed, remembered?.PowerLedBrightness));
+                            direct.IsChecked == true, fallback.IsChecked == true, remembered?.FanSpeed, remembered?.PowerLedBrightness, saveCameraSerial.IsChecked == true));
                     }
                     SaveRecovery(Load() with { UsbResetAfterFailures = failures });
                     return Task.CompletedTask;
@@ -254,7 +261,7 @@ internal static class Settings
                 SaveRecovery(options);
                 SavePeripheralRecovery(peripherals);
                 Cameras.Save(new CameraSelection(choice.Camera, selectedSerial, direct.IsChecked == true, fallback.IsChecked == true,
-                    fan,led));
+                    fan,led,saveCameraSerial.IsChecked == true));
                 window.Close();
             }
             catch (Exception e) { status.Text = e.Message; }

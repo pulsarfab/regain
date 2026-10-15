@@ -107,6 +107,14 @@ Assign your main camera, guider, and second imaging train to separate
 recovery settings. Both 32-bit and 64-bit ASCOM clients are supported.
 [Configure camera slots](https://pulsarfab.com/docs/regain/ascom.html#multiple-cameras).
 
+### Match calibration data to a physical camera
+
+To distinguish calibration data from cameras of the same model, enable **Save camera
+serial number in image metadata** in Regain's NINA camera setup. It defaults off.
+FITS and XISF images then include `CAMSER` with the connected camera's hardware
+serial, while the model remains in `INSTRUME`. Reconnect after changing the option.
+See [camera identity metadata](docs/nina-camera-fits.md).
+
 ### Use a lightweight local ASCOM driver
 
 The native ASCOM adapter handles the connection to your application; Rust
