@@ -4,7 +4,7 @@ using Regain.Core;
 namespace Regain.NINA;
 
 internal sealed record CameraSelection(CameraDescriptor Camera, string? Serial = null, bool UseDirectDriver = false,
-    bool AllowSdkFallback = false, int? FanSpeed = null, int? PowerLedBrightness = null);
+    bool AllowSdkFallback = false, int? FanSpeed = null, int? PowerLedBrightness = null, bool SaveCameraSerialNumber = false);
 
 internal sealed class CameraSelectionStore(string path)
 {

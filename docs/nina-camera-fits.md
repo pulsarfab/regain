@@ -11,12 +11,40 @@ This applies to the native **PulsarFab regain Retryable Camera** plugin, native
 Windows ASCOM cameras, and Alpaca camera discovery. Setup labels and ASCOM slot
 numbers identify connections; they do not replace the model in image metadata.
 Stable NINA selection IDs, ASCOM ProgIDs, and Alpaca device IDs/numbers are
-unchanged. A native plugin image still uses `CAMERAID = 'ZwoGain'` for compatibility.
+unchanged. The native plugin keeps its NINA selection ID `ZwoGain` for compatibility;
+NINA versions that write `CAMERAID` use that selection ID.
 
 NINA caches Alpaca discovery names. After changing a slot to another camera
 model, refresh the camera chooser and reconnect before capturing images.
 
-## Verification
+## Hardware serial number (opt-in)
+
+In Regain's NINA camera setup, enable **Save camera serial number in image metadata**
+and reconnect. The setting defaults off, including when loading an older saved
+camera selection. It applies to the Retryable Camera plugin in both SDK and Direct
+USB modes.
+
+```text
+INSTRUME= 'ZWO ASI585MM Pro'    / Imaging instrument name
+CAMSER  = '00001234abcdef01'    / Camera hardware serial number (example)
+```
+
+`CAMSER` is a custom FITS keyword, also carried as a FITS keyword in XISF metadata.
+The serial stays a string so leading zeros are preserved. Regain uses the hardware
+identity confirmed by the connected backend, rather than a saved selection, USB
+port, driver ID, or editable camera alias. It omits the keyword when unavailable.
+No extra USB commands are sent during capture or download.
+
+Use the serial to distinguish darks, biases, flats, and lights from cameras of the
+same model. It identifies the camera, not the entire optical train; filter, gain,
+temperature, and other calibration requirements still matter. The ASCOM and
+Alpaca adapters do not control which metadata another imaging application writes.
+
+Regression tests run simulated SDK and Direct captures through the real NINA FITS
+and XISF header writers, with the option enabled and disabled. They also cover older
+selection defaults and changing a saved selection during a connected session.
+
+## Camera model verification
 
 On 2026-10-09, installed NINA 3.2.0.9001 loaded the corrected native plugin and
 saved two physical ASI585MM Pro exposures through its ordinary imaging screen

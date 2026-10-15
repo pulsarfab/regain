@@ -32,6 +32,7 @@ public sealed class ResilientCamera : BaseINPC, ICamera
     private long exposureGeneration;
     private Task? telemetry;
     private short bin = 1;
+    private bool saveCameraSerialNumber;
     public ResilientCamera(CameraDescriptor camera, IExposureDataFactory images) : this(camera, images, CameraProvider.NewHost, null) { }
     internal ResilientCamera(IExposureDataFactory images, CameraSelectionStore store, Func<HostClient>? factory = null, RecoveryOptions? options = null, IProfileService? profiles = null,
         Func<UsbPeripheralRecovery>? peripheralRecoveryFactory = null)
@@ -66,6 +67,8 @@ public sealed class ResilientCamera : BaseINPC, ICamera
     // NINA copies Name into CameraInfo and the FITS INSTRUME header. Keep the
     // connected backend's model here; friendly setup labels may rename models.
     public string Name => descriptor.Name;
+    // Hardware identity cached by the backend, never a USB query during download.
+    public string SerialNumber => session?.Serial ?? string.Empty;
     public string DisplayName => "PulsarFab regain Retryable Camera";
     public string Category => "PulsarFab regain";
     public string Description => "ZWO camera driver with automatic retries";
@@ -108,6 +111,7 @@ public sealed class ResilientCamera : BaseINPC, ICamera
         {
             selected = selectionStore.Load() ?? throw new InvalidOperationException("Choose a camera in the PulsarFab regain setup dialog first.");
             SelectCamera(selected.Camera);
+            saveCameraSerialNumber = selected.SaveCameraSerialNumber;
         }
         bool direct = selected?.UseDirectDriver == true;
         if (direct && descriptor.Name is not ("ZWO ASI585MM Pro" or "ZWO ASI676MC" or "ZWO ASI662MC" or "ZWO ASI2600MM Duo" or "ZWO ASI2600MM Pro" or "ZWO ASI220MM Mini" or "ZWO ASI6200MM Pro"))
@@ -360,6 +364,8 @@ public sealed class ResilientCamera : BaseINPC, ICamera
         long generation;
         lock (sync) generation = exposureGeneration;
         string camera = Name, backend = session?.Backend ?? "unknown", outcome = "failed";
+        string? cameraSerial = session?.Serial;
+        bool writeCameraSerial = saveCameraSerialNumber;
         bool transferLogging = session?.Options.TransferLogMode == "verbose";
         Action<string>? recorder = session is { } owner ? owner.RecordDiagnostic : null;
         Exception? failure = null;
@@ -370,6 +376,8 @@ public sealed class ResilientCamera : BaseINPC, ICamera
             finally { lock (sync) { if (generation == exposureGeneration) RestoreNinaTimeout(); } }
             var metadata = new ImageMetaData();
             metadata.FromCamera(this);
+            if (writeCameraSerial && !string.IsNullOrWhiteSpace(cameraSerial))
+                metadata.GenericHeaders.Add(new StringMetaDataHeader("CAMSER", cameraSerial, "Camera hardware serial number"));
             metadata.Image.ExposureStart = frame.StartedUtc;
             metadata.Image.ExposureTime = frame.Exposure.microseconds / 1e6;
             metadata.Camera.BinX = metadata.Camera.BinY = frame.Exposure.bin;
