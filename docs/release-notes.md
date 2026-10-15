@@ -14,7 +14,7 @@ Record which physical camera produced your lights and calibration frames.
   download. Changing a saved selection affects the next connection.
 
 Use `CAMSER` to distinguish data from cameras of the same model. It identifies
- the camera, not the whole optical train; gain, temperature, filters and other
+the camera, not the whole optical train; gain, temperature, filters and other
 calibration settings still matter. This setting belongs to the Regain NINA
 Retryable Camera plugin; other imaging applications control their own metadata.
 
