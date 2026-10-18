@@ -830,6 +830,7 @@ fn source_identity_cannot_be_retargeted_and_direct_sdk_share_claim() {
                 device,
                 identity: "ONE-CAMERA".into(),
                 filter_wheel: None,
+                temperature_compensation: None,
             },
             polling: Default::default(),
         });
@@ -991,6 +992,7 @@ fn native_metadata_is_class_specific_and_semantic_errors_keep_shared_field_paths
             camera: None,
             device: NativeDevice::Efw,
             identity: "PRIVATE".into(),
+            temperature_compensation: None,
             filter_wheel: Some(NativeFilterWheelMetadata {
                 names: vec!["L".into(), "R".into()],
                 focus_offsets: vec![0, 10],

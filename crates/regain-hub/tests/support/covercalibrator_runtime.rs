@@ -23,6 +23,7 @@ fn runtime_setup(device: &Arc<Device>) -> (HubConfig, Arc<HubRuntime>, Arc<Sourc
             device: NativeDevice::Ofp2,
             identity: "SIM-OFP2".into(),
             filter_wheel: None,
+            temperature_compensation: None,
         },
     });
     for number in [4, 17] {

@@ -49,10 +49,10 @@ public sealed class Driver : IFocuserV3
     public int MaxStep => Read(s=>s.Status().MaxStep);
     public int MaxIncrement => MaxStep;
     public double StepSize => Read<double>(_=>throw new ASCOM.PropertyNotImplementedException(nameof(StepSize),false));
-    public bool TempCompAvailable => Read(_=>false);
-    public bool TempComp { get=>Read(_=>false); set=>Write(_=>throw new ASCOM.PropertyNotImplementedException(nameof(TempComp),true)); }
+    public bool TempCompAvailable => Read(s=>s.Status().TempCompAvailable);
+    public bool TempComp { get=>Read(s=>s.Status().TempComp); set=>Write(s=> { if (!s.Status().TempCompAvailable) throw new ASCOM.PropertyNotImplementedException(nameof(TempComp),true); s.SetTempComp(value); }); }
     public double Temperature => Read(s=>s.Status().Temperature ?? throw new ASCOM.PropertyNotImplementedException(nameof(Temperature),false));
-    public void Move(int Position) { int max=MaxStep; if(Position<0 || Position>max) throw new ASCOM.InvalidValueException(nameof(Position),Position.ToString(),"0.."+max); Write(s=>s.Move(Position)); }
+    public void Move(int Position) { int max=MaxStep; if(Position<0 || Position>max) throw new ASCOM.InvalidValueException(nameof(Position),Position.ToString(),"0.."+max); Write(s=> { try { s.Move(Position); } catch (ArgumentOutOfRangeException e) { throw new ASCOM.InvalidValueException(nameof(Position),Position.ToString(),e.Message); } }); }
     public void Halt()=>Write(s=>s.Halt());
     public void SetupDialog() => SharedDevice.Setup();
     public void CommandBlind(string Command,bool Raw)=>throw new ASCOM.MethodNotImplementedException(nameof(CommandBlind));

@@ -26,6 +26,7 @@ fn wheel_config() -> HubConfig {
             device: NativeDevice::Efw,
             identity: "0102030405060708".into(),
             filter_wheel: None,
+            temperature_compensation: None,
         },
     });
     for number in [4, 17] {

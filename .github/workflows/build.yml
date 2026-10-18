@@ -55,6 +55,8 @@ jobs:
         run: cargo run -p regain-hub --example export_config --locked -- contracts/hub-config.json --check
       - name: Verify generated camera recovery contracts
         run: cargo run -p regain-core --example export_recovery --locked -- contracts/camera-recovery.json src/Regain.Core/RecoveryOptions.g.cs --check
+      - name: Verify generated focuser compensation contract
+        run: cargo run -p regain-core --example export_focuser --locked -- contracts/focuser-compensation.json --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo build --workspace --release --locked
       - run: cargo test --workspace --locked

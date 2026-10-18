@@ -77,14 +77,14 @@ public sealed class EafFocuser : AccessoryBase, IFocuserV3
     public int MaxIncrement => MaxStep;
     public int Position => Read(d => d.Status().Position);
     public double StepSize => Read<double>(_ => throw new ASCOM.PropertyNotImplementedException(nameof(StepSize), false));
-    public bool TempCompAvailable => Read(_ => false);
-    public bool TempComp { get => Read(_ => false); set { _ = Device; throw new ASCOM.PropertyNotImplementedException(nameof(TempComp), true); } }
+    public bool TempCompAvailable => Read(d => d.Status().TempCompAvailable);
+    public bool TempComp { get => Read(d => d.Status().TempComp); set => Write(d => { if (!d.Status().TempCompAvailable) throw new ASCOM.PropertyNotImplementedException(nameof(TempComp), true); d.SetTempComp(value); }); }
     public double Temperature => Read(d => d.Status().Temperature ?? throw new ASCOM.PropertyNotImplementedException(nameof(Temperature), false));
     public void Move(int Position)
     {
         int maximum = MaxStep;
         if (Position < 0 || Position > maximum) throw new ASCOM.InvalidValueException(nameof(Position), Position.ToString(), "0.." + maximum);
-        Write(d => d.Move(Position));
+        Write(d => { try { d.Move(Position); } catch (ArgumentOutOfRangeException e) { throw new ASCOM.InvalidValueException(nameof(Position), Position.ToString(), e.Message); } });
     }
     public void Halt() => Write(d => d.Halt());
 }

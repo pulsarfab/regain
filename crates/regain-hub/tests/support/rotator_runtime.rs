@@ -97,6 +97,7 @@ fn runtime_setup_with_request_timeout(
             device: NativeDevice::Caa,
             identity: "0102030405060708".into(),
             filter_wheel: None,
+            temperature_compensation: None,
         },
     });
     for number in [17, 42] {

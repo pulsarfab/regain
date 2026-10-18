@@ -11,6 +11,8 @@ try {
     if ($LASTEXITCODE) { throw 'Rust formatting failed' }
     cargo run -p regain-core --example export_recovery --locked -- contracts/camera-recovery.json src/Regain.Core/RecoveryOptions.g.cs --check
     if ($LASTEXITCODE) { throw 'Generated camera recovery contracts are stale' }
+    cargo run -p regain-core --example export_focuser --locked -- contracts/focuser-compensation.json --check
+    if ($LASTEXITCODE) { throw 'Generated focuser compensation contract is stale' }
     node scripts/test-camera-recovery.mjs
     if ($LASTEXITCODE) { throw 'Camera recovery browser contract failed' }
     cargo clippy --all-targets --locked -- -D warnings
