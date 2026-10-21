@@ -73,8 +73,10 @@ internal sealed class NinaUsbPeripheral<THandler, TConsumer, TInfo> : IUsbPeriph
     private INotifyPropertyChanged? beforeRotatorConnect;
     private TaskCompletionSource? rotatorRefresh;
     private bool disposed, profileChanged;
+    private global::NINA.Equipment.Interfaces.IDevice? verifiedDevice;
     public string Kind { get; }
     public bool RequiresImagingState => imagingState is not null;
+    public bool RequiresFreshOptics { get { lock (gate) return verifiedDevice is not null; } }
     public event Action? StateChanged;
 
     internal NinaUsbPeripheral(string kind, IDeviceMediator<THandler, TConsumer, TInfo> mediator,
@@ -101,6 +103,7 @@ internal sealed class NinaUsbPeripheral<THandler, TConsumer, TInfo> : IUsbPeriph
         BindInfo(info);
         if (info?.Connected == true) {
             var device = mediator.GetDevice();
+            if (device is Regain.Rotator.IVerifiedOpticalDevice optical && optical.OpticalConnectionRequested) lock (gate) verifiedDevice = device;
             BindExistingChooser(info, device);
             return new(true, device?.Id ?? "", imagingState?.Invoke(info));
         }
@@ -199,6 +202,36 @@ internal sealed class NinaUsbPeripheral<THandler, TConsumer, TInfo> : IUsbPeriph
         foreach (Action listener in listeners.GetInvocationList()) {
             try { listener(); } catch (Exception error) { CameraLog.Session("USB peripherals", Kind + " observer failed: " + error.Message); }
         }
+    }
+
+    public bool OpticalStatesMatch(PeripheralState before, PeripheralState after)
+    {
+        if (before.DeviceId != after.DeviceId || !after.Connected || before.ImagingState is null || after.ImagingState is null) return false;
+        global::NINA.Equipment.Interfaces.IDevice? device;
+        lock (gate) device = verifiedDevice;
+        return device is Regain.Rotator.IVerifiedOpticalDevice optical && optical.OpticalStatesMatch(before.ImagingState, after.ImagingState);
+    }
+
+    public async Task<PeripheralState?> ProbeAsync(CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        var device = mediator.GetDevice();
+        if (device is not Regain.Rotator.IVerifiedOpticalDevice) lock (gate) device = verifiedDevice;
+        if (device is not Regain.Rotator.IVerifiedOpticalDevice optical || !optical.OpticalConnectionRequested) return null;
+        string expected = device.Id;
+        _ = Snapshot(); // Bind and verify the existing NINA chooser.
+        if (!SameSelection(expected)) throw new IOException(Kind + " selection changed before optical verification.");
+        Task<(string State, string Epoch)> pending;
+        lock (operations.Gate) {
+            if (operations.ActiveSequence || operations.Pending is { IsCompleted: false })
+                throw new IOException("A previous " + Kind + " operation is unresolved; optical verification cannot overlap it.");
+            if (operations.Pending?.IsFaulted == true) _ = operations.Pending.Exception;
+            operations.Pending = pending = Task.Run(() => (optical.ReadVerifiedOpticalState(), optical.OpticalConnectionEpoch), token);
+        }
+        var state = await pending.WaitAsync(token).ConfigureAwait(false);
+        if (!SameSelection(expected) || !optical.OpticalConnectionRequested)
+            throw new IOException(Kind + " selection or connection changed during optical verification.");
+        return new(true, expected, state.State, state.Epoch);
     }
 
     public async Task<bool> ReconnectAsync(CancellationToken token)

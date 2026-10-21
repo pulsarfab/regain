@@ -11,22 +11,28 @@ internal sealed record UsbPeripheralRecoveryOptions
     }
 }
 
-internal sealed record PeripheralState(bool Connected, string DeviceId, string? ImagingState = null);
+internal sealed record PeripheralState(bool Connected, string DeviceId, string? ImagingState = null, string? ConnectionEpoch = null);
 
 internal interface IUsbPeripheral : IDisposable
 {
     string Kind { get; }
     bool RequiresImagingState => false;
+    bool RequiresFreshOptics => false;
     PeripheralState Snapshot();
     event Action? StateChanged;
     Task<bool> ReconnectAsync(CancellationToken token);
+    Task<PeripheralState?> ProbeAsync(CancellationToken token) => Task.FromResult<PeripheralState?>(null);
+    bool OpticalStatesMatch(PeripheralState before, PeripheralState after) => before with { ConnectionEpoch = null } == after with { ConnectionEpoch = null };
 }
 
 /// <summary>
-/// Correlates NINA disconnect reports with this camera's USB reset. It never
+/// Verifies native optics across spontaneous USB loss and correlates NINA
+/// disconnect reports with this camera's USB reset. It never
 /// changes device selection, moves equipment, restores filters, or starts guiding.
 /// The supervisor holds replacement exposures until WaitAsync succeeds.
 /// </summary>
+internal sealed class OpticalExposureInterruptedException(string message) : IOException(message);
+
 internal sealed class UsbPeripheralRecovery : IDisposable
 {
     private sealed class Episode(ulong id, long started, CancellationTokenSource cancellation,
@@ -55,6 +61,8 @@ internal sealed class UsbPeripheralRecovery : IDisposable
     private TaskCompletionSource anchorChanged = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private Episode? episode;
     private bool disposed;
+    private Exception? opticalFailure;
+    private Dictionary<IUsbPeripheral, PeripheralState>? captureOptics;
     internal bool Enabled => options.Enabled;
 
     internal UsbPeripheralRecovery(IReadOnlyList<IUsbPeripheral> peripherals,
@@ -69,6 +77,69 @@ internal sealed class UsbPeripheralRecovery : IDisposable
             peripheral.StateChanged += handler;
             Observe(peripheral);
         }
+    }
+
+    // Functional reads catch spontaneous USB loss even when NINA still reports Connected.
+    // The native sessions reopen only the same serial and never replay a write.
+    internal async Task<T> CaptureWithOpticsAsync<T>(Func<Task<T>> capture, CancellationToken token)
+    {
+        if (!options.Enabled) return await capture().ConfigureAwait(false);
+        lock (sync) if (opticalFailure is not null)
+            throw new IOException("Peripheral optical recovery is blocked until the camera is explicitly reconnected.", opticalFailure);
+        Dictionary<IUsbPeripheral, PeripheralState> before;
+        try { before = await ProbeOpticsAsync(token).ConfigureAwait(false); }
+        catch (Exception error) { BlockOptics(error); throw; }
+        lock (sync) captureOptics = before;
+        try {
+            var result = await capture().ConfigureAwait(false);
+            await VerifyOpticsAsync(before, token).ConfigureAwait(false);
+            return result;
+        } finally { lock (sync) captureOptics = null; }
+    }
+
+    private async Task VerifyOpticsAsync(Dictionary<IUsbPeripheral, PeripheralState> before, CancellationToken token, bool beforeReplacement = false)
+    {
+        try {
+            var after = await ProbeOpticsAsync(token).ConfigureAwait(false);
+            foreach (var (peripheral, state) in before) {
+                if (!after.TryGetValue(peripheral, out var actual) || !peripheral.OpticalStatesMatch(state, actual))
+                    throw new IOException(peripheral.Kind + " optical state changed or became unavailable during capture; image is withheld. No move was replayed.");
+            }
+            if (after.Keys.Any(peripheral => !before.ContainsKey(peripheral)))
+                throw new IOException("Optical equipment changed during capture; image is withheld.");
+            if (beforeReplacement) {
+                // The supervisor already discarded the old frame. Anchor the replacement
+                // to these newly verified connections, before it exposes again.
+                foreach (var pair in after) before[pair.Key] = pair.Value;
+            } else if (before.Any(pair => pair.Value.ConnectionEpoch != after[pair.Key].ConnectionEpoch)) {
+                throw new OpticalExposureInterruptedException("Exposure overlapped an optical disconnect or command; image is withheld because continuous optical state was not verified. Connections and idle state are now verified; the next capture may proceed. No move was replayed.");
+            }
+        } catch (Exception error) { BlockOptics(error); throw; }
+    }
+
+    private async Task<Dictionary<IUsbPeripheral, PeripheralState>> ProbeOpticsAsync(CancellationToken token)
+    {
+        var states = new Dictionary<IUsbPeripheral, PeripheralState>();
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token, lifetime.Token);
+        deadline.CancelAfter(TimeSpan.FromSeconds(90));
+        foreach (var peripheral in peripherals) {
+            var state = await peripheral.ProbeAsync(deadline.Token).WaitAsync(deadline.Token).ConfigureAwait(false);
+            if (state is null) {
+                if (peripheral.RequiresFreshOptics) throw new IOException(peripheral.Kind + " was previously connected but its optical state is now unavailable; camera reconnection is required. No device was automatically turned back on.");
+                continue;
+            }
+            if (!state.Connected || state.ImagingState is null || string.IsNullOrWhiteSpace(state.DeviceId))
+                throw new IOException(peripheral.Kind + " optical state cannot be verified; exposure is blocked.");
+            states[peripheral] = state;
+        }
+        return states;
+    }
+
+    private void BlockOptics(Exception error)
+    {
+        if (error is OperationCanceledException or OpticalExposureInterruptedException) return;
+        lock (sync) opticalFailure ??= error;
+        Write("Spontaneous USB optical verification failed: " + error.Message + " No equipment movement was replayed.");
     }
 
     internal void ResetStarting(ulong? id, long? timestampUnixUs = null)
@@ -236,6 +307,9 @@ internal sealed class UsbPeripheralRecovery : IDisposable
                 throw new IOException($"{peripheral.Kind} reconnected with a changed or unavailable optical state ({expected} -> {state.ImagingState ?? "unknown"}); check the equipment before capturing again.");
             Write($"{peripheral.Kind} connection restored; captured device identity and reported optical state match.");
         }
+        Dictionary<IUsbPeripheral, PeripheralState>? beforeCapture;
+        lock (sync) beforeCapture = captureOptics;
+        if (beforeCapture is not null) await VerifyOpticsAsync(beforeCapture, token, beforeReplacement: true).ConfigureAwait(false);
         Write(dropped.Length == 0 ? "No previously connected NINA peripheral reported a disconnect in the camera USB recovery window."
             : $"Camera USB recovery: {dropped.Length} NINA peripheral connection(s) restored. Guiding is not restarted by Regain.");
     }

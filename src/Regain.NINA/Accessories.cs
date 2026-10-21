@@ -37,7 +37,7 @@ public sealed class EfwProvider : IEquipmentProvider<IFilterWheel>
 public abstract class AccessoryDevice : BaseINPC, IDevice, IDisposable
 {
     protected readonly AccessorySession Session;
-    protected AccessoryDevice(string kind) => Session = new(Regain.Rotator.RegainPaths.EnvironmentVariable(kind == "eta" ? "REGAIN_ETA_WORKER" : kind == "fc3" ? "REGAIN_FC3_WORKER" : "REGAIN_ACCESSORY_WORKER") ?? Path.Combine(CameraProvider.DirectoryPath, "regain-device.exe"), kind, AccessorySession.SettingsPath(kind, "nina"));
+    protected AccessoryDevice(string kind) { Session = new(Regain.Rotator.RegainPaths.EnvironmentVariable(kind == "eta" ? "REGAIN_ETA_WORKER" : kind == "fc3" ? "REGAIN_FC3_WORKER" : "REGAIN_ACCESSORY_WORKER") ?? Path.Combine(CameraProvider.DirectoryPath, "regain-device.exe"), kind, AccessorySession.SettingsPath(kind, "nina")); Session.Diagnostic = text => Logger.Info("PulsarFab regain " + kind + ": " + text); }
     public string Id => (Session.Kind == "eta" ? "Regain." : "ZwoGain.") + Session.Kind.ToUpperInvariant();
     public string Name => Session.Kind == "eta" ? "PulsarFab regain Wanderer Astro ETA M54" : Session.Kind == "efw" ? "PulsarFab regain EFW Filter Wheel" : Session.Kind == "fc3" ? "PulsarFab regain Pegasus FocusCube3" : "PulsarFab regain EAF Focuser";
     public string DisplayName => Name;
@@ -102,8 +102,12 @@ public abstract class NativeFocuser(string kind) : AccessoryDevice(kind), IFocus
     }
     public void Halt() { Session.Halt(); RaiseAllPropertiesChanged(); }
 }
-public sealed class EfwFilterWheel(IProfileService profiles) : AccessoryDevice("efw"), IFilterWheel
+public sealed class EfwFilterWheel(IProfileService profiles) : AccessoryDevice("efw"), IFilterWheel, IVerifiedOpticalDevice
 {
+    public bool OpticalConnectionRequested => Session.ConnectionRequested;
+    public string OpticalConnectionEpoch => Session.OpticalConnectionEpoch;
+    public string ReadVerifiedOpticalState() => Session.VerifiedOpticalState();
+    public bool OpticalStatesMatch(string before, string after) => before == after;
     public int[] FocusOffsets => (int[])Session.Profile.FocusOffsets.Clone();
     public string[] Names => (string[])Session.Profile.Names.Clone();
     public short Position { get { var s = Session.Status(); return s.Moving ? (short)-1 : checked((short)s.Position); } set { Session.Move(value); RaiseAllPropertiesChanged(); } }
