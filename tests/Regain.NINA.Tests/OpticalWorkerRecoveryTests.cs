@@ -19,7 +19,16 @@ public sealed class OpticalWorkerRecoveryTests
         internal void Fail(string kind) => File.WriteAllText(Path.Combine(State, kind + "-fail-once"), "");
         internal string[] Commands(string kind) => Directory.GetFiles(State, kind + "-*.jsonl").SelectMany(File.ReadAllLines)
             .Select(line => JsonDocument.Parse(line).RootElement.GetProperty("command").GetString()!).ToArray();
-        public void Dispose() { try { Directory.Delete(Root, true); } catch (IOException) { } }
+        public void Dispose() {
+            // EOF can precede Windows releasing the executable image mapping.
+            // Wait for that release without hiding a worker that stays alive.
+            for (int attempt = 0; ; attempt++) {
+                try { Directory.Delete(Root, true); return; }
+                catch (Exception error) when (attempt < 20 && error is IOException or UnauthorizedAccessException) {
+                    Thread.Sleep(100);
+                }
+            }
+        }
     }
 
     [Fact]
