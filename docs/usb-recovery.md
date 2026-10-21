@@ -123,11 +123,69 @@ try to recover other devices.
 
 ### NINA peripheral reconnection
 
-The retryable camera's **Recovery** tab has **Reconnect NINA peripherals after
-camera USB recovery**, enabled by default, and **Peripheral disconnect window**,
+The retryable camera's **Recovery** tab has **Verify optical devices and recover
+USB connections**, enabled by default, and **Peripheral disconnect window**,
 15 seconds by default (1–60 seconds). Changes apply at the next camera connection.
-This runs only after a Regain camera USB reset; it is not a general reconnect
-trigger for unrelated failures.
+
+With Regain's native NINA EFW and CAA providers selected, the camera reads fresh
+hardware identity and optical state before capture, before any replacement
+following a camera USB reset, and before delivering the image. These reads do
+not trust NINA's cached `Connected` flag. A changed or missing filter slot,
+rotator angle, device selection or hardware serial withholds the image and
+blocks later captures until the camera is explicitly reconnected after checking
+the equipment. No filter change, focus offset, rotation or guiding operation is
+replayed. CAA angle comparisons allow 0.01 degrees of readout noise.
+
+An exposure that overlaps an EFW/CAA disconnect or optical command is withheld even when the final
+slot or angle matches: matching endpoints cannot prove the filter or rotator
+stayed put during the exposure. Once the same idle optical state is verified,
+the next fresh capture can proceed. A replacement following a camera reset gets
+a new connection anchor only after the supervisor's pre-replacement verification.
+Changed or unknown optics still require explicit reconnection and inspection.
+
+The native EFW and CAA session code also handles spontaneous USB read failures,
+independently of camera USB reset. It closes the stale worker and makes at most
+three attempts, with two-second delays, to reopen the selected serial. Recovery
+requires a previously verified idle state and the same state after reopening:
+EFW slot and slot count; CAA mechanical angle, logical angle, logical offset and
+travel limit and reverse setting. Reconnection restores the saved CAA logical sync; it does not
+reset the mechanical origin or move the rotator. An active/unknown move, lost
+write acknowledgement, changed optical state or exhausted attempts requires an
+explicit disconnect/reconnect. A manual disconnect is never undone by polling.
+A previously connected native optical device becoming disconnected is not silently
+omitted from verification, even if NINA disconnects its driver after a polling
+error. The camera must be explicitly reconnected to accept a changed optical
+configuration. Manual disconnects are never automatically reversed.
+The shared session code gives the same read recovery to native Windows ASCOM
+EFW/CAA clients, preserving their shared connection leases during worker recovery.
+This does not add spontaneous reconnection to third-party ASCOM drivers or to
+the Rust Alpaca accessory workers. EAF motion and backlash are not replayed.
+Recovery diagnostics appear in NINA's log and the accessory/rotator log.
+
+The [acceptance evidence](optical-recovery-evidence.json) records the October 21
+installed-NINA pass: ten capture checks with the physical ASI6200MM Pro, five
+saved full-frame 5-second RAW16 images, and injected EFW/CAA worker failures.
+Changed optics, interrupted exposures and a disconnected wheel returned no image;
+the verified next capture succeeded without a move replay. The
+[test procedure](../tests/fixtures/nina-optical-acceptance/README.md) is repeatable.
+These fixtures do not establish physical EFW/CAA unplug or power-loss recovery.
+
+A subsequent [physical CAA pass](physical-caa-recovery-evidence.json) used the
+CAA-M54 and the same camera in installed NINA. Two exact downstream USB port
+cycles invalidated the CAA handle and changed its Windows arrival generation;
+the camera's generation stayed unchanged. Regain reopened the same CAA serial
+on its first recovery attempt and verified the unchanged idle 90-degree position,
+logical offset, reverse and limit. A cycle before capture allowed a fresh image.
+A cycle during exposure withheld that frame; the next two captures succeeded
+without manual reconnection. Five full-frame FITS images, including the baseline,
+had distinct pixel hashes. No movement or origin change was requested.
+The original installation and profile were restored. This verifies CAA USB
+re-enumeration, not whole-cable power loss or an extended absence. Physical EFW
+reconnection remains untested.
+
+For other NINA providers, the camera's existing reconnection pass runs after
+Regain initiates a camera USB reset. The disconnect window applies to that pass;
+it is not a blanket reconnect trigger for unrelated or intentional disconnects.
 
 Regain records which NINA devices were connected before the reset and watches for
 their disconnect reports within that window. Once the camera returns and the

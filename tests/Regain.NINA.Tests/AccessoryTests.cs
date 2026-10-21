@@ -118,8 +118,14 @@ public sealed class AccessoryTests : IDisposable
             Assert.Equal(new[] {490.0,500.0,510.0}, state.RootElement.GetProperty("points_um").EnumerateArray().Select(v=>v.GetDouble()));
         await Assert.ThrowsAsync<InvalidOperationException>(()=>eta.Move(0, CancellationToken.None, 0));
         Assert.Throws<InvalidOperationException>(eta.Halt);
-        using var cancellation = new CancellationTokenSource(100);
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(()=>eta.Move(600,cancellation.Token,0));
+        using var cancellation = new CancellationTokenSource();
+        // Cancel at the first acknowledged status publication, before yielding
+        // to the thread pool. A timer can arrive after all three points finish.
+        System.ComponentModel.PropertyChangedEventHandler cancelAfterStatus = (_, _) => cancellation.Cancel();
+        eta.PropertyChanged += cancelAfterStatus;
+        try {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(()=>eta.Move(600,cancellation.Token,0));
+        } finally { eta.PropertyChanged -= cancelAfterStatus; }
         var deadline = DateTime.UtcNow.AddSeconds(5);
         while (eta.IsMoving) { Assert.True(DateTime.UtcNow < deadline); await Task.Delay(100); }
         // Only point 1 started before cancellation; the other two retain their tilt positions.

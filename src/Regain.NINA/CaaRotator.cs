@@ -13,7 +13,7 @@ public sealed class CaaProvider : IEquipmentProvider<IRotator>
     public IList<IRotator> GetEquipment() => [new CaaRotator(), new CaaRotator(true)];
 }
 
-public sealed class CaaRotator : BaseINPC, IRotator, IDisposable
+public sealed class CaaRotator : BaseINPC, IRotator, IDisposable, IVerifiedOpticalDevice
 {
     private static readonly string Worker = Path.Combine(CameraProvider.DirectoryPath, "regain-device.exe");
     private CaaSession session;
@@ -29,6 +29,10 @@ public sealed class CaaRotator : BaseINPC, IRotator, IDisposable
     public string DriverVersion => typeof(CaaRotator).Assembly.GetName().Version!.ToString();
     public bool HasSetupDialog => true;
     public bool Connected => session.Connected;
+    public bool OpticalConnectionRequested => !falcon && session.ConnectionRequested;
+    public string OpticalConnectionEpoch => session.OpticalConnectionEpoch;
+    public string ReadVerifiedOpticalState() => session.VerifiedOpticalState();
+    public bool OpticalStatesMatch(string before, string after) => CaaSession.OpticalStatesMatch(before, after);
     public bool CanReverse => true;
     public bool Reverse {
         get => session.Request(new { command = "settings" }).GetProperty("reverse").GetBoolean();

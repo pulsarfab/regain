@@ -49,12 +49,12 @@ internal static class Settings
     }
     internal static Func<UsbPeripheralRecoveryOptions> PeripheralRecoveryControls(Panel body, UsbPeripheralRecoveryOptions options)
     {
-        body.Children.Add(new TextBlock { Text = "Reconnect NINA peripherals after camera USB recovery", FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
+        body.Children.Add(new TextBlock { Text = "Verify optical devices and recover USB connections", FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
         var enabled = new CheckBox { IsChecked = options.Enabled, HorizontalAlignment = HorizontalAlignment.Left };
         System.Windows.Automation.AutomationProperties.SetAutomationId(enabled, "usb-peripherals-enabled");
-        System.Windows.Automation.AutomationProperties.SetName(enabled, "Reconnect NINA peripherals after camera USB recovery");
+        System.Windows.Automation.AutomationProperties.SetName(enabled, "Verify optical devices and recover USB connections");
         body.Children.Add(enabled);
-        body.Children.Add(new TextBlock { Text = "Reconnect only previously connected devices that disconnect within this window after the camera. Keep the same selected device and optical state. This does not move equipment or restart guiding. Applies on the next camera connection.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 8) });
+        body.Children.Add(new TextBlock { Text = "Read fresh Regain EFW and CAA optical state before and after capture, including spontaneous USB reconnects. After a camera USB reset, also reconnect previously connected NINA devices that drop within the window. Keep the same device and optical state; never replay moves or restart guiding. Applies on the next camera connection.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 8) });
         body.Children.Add(new TextBlock { Text = "Peripheral disconnect window (seconds)" });
         var window = new TextBox { Text = options.DisconnectWindowSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture), MinHeight = 28, Margin = new Thickness(0, 4, 0, 18), ToolTip = "1–60 seconds after this camera starts USB recovery." };
         System.Windows.Automation.AutomationProperties.SetAutomationId(window, "usb-peripherals-window");

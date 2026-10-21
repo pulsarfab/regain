@@ -38,10 +38,15 @@ public sealed class AccessorySession : IDisposable, IDeviceSession
     private readonly string executable;
     private Process? worker;
     private StreamWriter? input;
+    private readonly OpticalStateRecovery<AccessoryStatus> recovery = new();
+    private bool opening;
+    public bool ConnectionRequested { get; private set; }
+    public string OpticalConnectionEpoch { get { lock (gate) { recovery.RequireVerified(); return recovery.ConnectionEpoch; } } }
     public string Kind { get; }
     public string ProfilePath { get; }
     public AccessoryProfile Profile { get; private set; }
-    public bool Connected { get { lock (gate) return worker is { HasExited: false }; } }
+    private bool WorkerConnected => worker is { HasExited: false };
+    public bool Connected { get { lock (gate) return ConnectionRequested && !recovery.IsBlocked && (WorkerConnected || recovery.CanRecover); } }
     public AccessorySession(string executable, string kind, string profilePath)
     {
         if (kind is not ("efw" or "eaf" or "fc3" or "ofp2" or "eta")) throw new ArgumentException("Unknown accessory");
@@ -72,8 +77,10 @@ public sealed class AccessorySession : IDisposable, IDeviceSession
         process.ErrorDataReceived += (_, e) => { if (e.Data is not null) Log(e.Data); };
         process.Start(); process.BeginErrorReadLine(); return process;
     }
+    public Action<string>? Diagnostic { get; set; }
     private void Log(string text)
     {
+        try { Diagnostic?.Invoke(text); } catch { }
         try {
             var directory = Path.GetDirectoryName(ProfilePath)!; Directory.CreateDirectory(directory);
             var path = Path.Combine(directory, Kind + ".log");
@@ -120,11 +127,15 @@ public sealed class AccessorySession : IDisposable, IDeviceSession
         }
         if (Kind == "fc3" ? !System.Text.RegularExpressions.Regex.IsMatch(serial, @"\A[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}\z") : (serial.Length != 16 || serial.Any(c => !Uri.IsHexDigit(c)))) throw new ArgumentException("Select a device by its serial number");
     }
-    public void Connect()
+    public void Connect() => Open(false);
+    private void Open(bool recovering)
     {
         lock (gate) {
-            if (Connected) return;
-            Profile = ReadProfile();
+            if (WorkerConnected && !recovery.IsBlocked) return;
+            CloseWorker();
+            if (!recovering) ConnectionRequested = true;
+            if (!recovering) { Profile = ReadProfile(); recovery.Reset(); }
+            else if (ReadProfile().Serial != Profile.Serial) throw new IOException("Device selection changed during recovery");
             if (Profile.Serial.Length == 0) {
                 var choices = Discover();
                 if (choices.Count != 1) throw new InvalidOperationException("Choose an available device in setup; found " + choices.Count);
@@ -133,11 +144,12 @@ public sealed class AccessorySession : IDisposable, IDeviceSession
             ValidateSerial(Profile.Serial);
             worker?.Dispose(); worker = Start("serve --serial " + Profile.Serial);
             input = new StreamWriter(worker.StandardInput.BaseStream, new System.Text.UTF8Encoding(false)) { AutoFlush = true };
+            opening = true;
             try {
                 var identity = Request(new { command = "identity" });
                 if (!string.Equals(identity.GetProperty("serial").GetString(), Profile.Serial, StringComparison.OrdinalIgnoreCase)) throw new IOException("USB device identity changed");
-                var status = Status();
-                if (Kind == "efw") {
+                var status = ReadStatus();
+                if (Kind == "efw" && !recovering) {
                     if (Profile.Names.Length != status.Slots || Profile.FocusOffsets.Length != status.Slots) {
                         Profile.Names = Enumerable.Range(1, status.Slots).Select(i => "Filter " + i).ToArray();
                         Profile.FocusOffsets = new int[status.Slots]; Save();
@@ -145,6 +157,7 @@ public sealed class AccessorySession : IDisposable, IDeviceSession
                 }
                 Log("Connected " + identity.GetRawText());
             } catch { CloseWorker(); throw; }
+            finally { opening = false; }
         }
     }
     public string EtaMovePoint(string parameters)
@@ -160,25 +173,44 @@ public sealed class AccessorySession : IDisposable, IDeviceSession
     public JsonElement Request(object request)
     {
         lock (gate) {
-            if (!Connected) throw new InvalidOperationException("Device is disconnected");
+            if (!WorkerConnected) throw new InvalidOperationException("Device is disconnected");
             JsonDocument document;
+            var command = JsonSerializer.SerializeToElement(request);
+            string name = command.GetProperty("command").GetString()!;
+            bool write = Kind == "efw" && !opening && name is not ("identity" or "status");
+            if (write) recovery.Writing();
             try {
                 input!.WriteLine(JsonSerializer.Serialize(request));
                 var read = worker!.StandardOutput.ReadLineAsync();
                 if (!read.Wait(TimeSpan.FromSeconds(10))) throw new TimeoutException("USB worker timed out; command was not retried");
                 document = JsonDocument.Parse(read.Result ?? throw new IOException("USB worker exited"));
-            } catch (Exception error) { Log(error.Message); CloseWorker(); throw; }
+            } catch (Exception error) { if (write) recovery.Uncertain(error); Log(error.Message); CloseWorker(); throw; }
             using (document) {
-                if (!document.RootElement.GetProperty("ok").GetBoolean()) throw new InvalidOperationException(document.RootElement.GetProperty("error").GetString());
+                if (!document.RootElement.GetProperty("ok").GetBoolean()) {
+                    var error = new InvalidOperationException(document.RootElement.GetProperty("error").GetString());
+                    // A complete error reply is not a lost acknowledgement. The worker retains motion faults.
+                    throw error;
+                }
                 return document.RootElement.GetProperty("result").Clone();
             }
         }
     }
+    private AccessoryStatus ReadStatus() => JsonSerializer.Deserialize<AccessoryStatus>(Request(new { command = "status" }).GetRawText())!;
     public AccessoryStatus Status()
     {
-        var s = JsonSerializer.Deserialize<AccessoryStatus>(Request(new { command = "status" }).GetRawText())!;
-        if (s.Error != 0 || s.Fault is not null) throw new IOException(s.Fault ?? "Device error " + s.Error);
-        return s;
+        lock (gate) {
+            var s = Kind != "efw" || opening ? ReadStatus() : recovery.Read(ReadStatus, () => Open(true), CloseWorker,
+                value => !value.Moving && !value.Calibrating && value.Error == 0 && value.Fault is null && value.Position >= 0 && value.Position < value.Slots,
+                (before, after) => before.Position == after.Position && before.Slots == after.Slots, Log);
+            if (s.Error != 0 || s.Fault is not null) throw new IOException(s.Fault ?? "Device error " + s.Error);
+            return s;
+        }
+    }
+    public string VerifiedOpticalState()
+    {
+        var state = Status();
+        if (state.Moving || state.Calibrating || state.Position < 0 || state.Position >= state.Slots) throw new IOException("Filter wheel position is unknown, moving or calibrating; exposure is blocked.");
+        return Profile.Serial + ":" + state.Slots + ":" + state.Position;
     }
     public void Move(int position)
     {
@@ -190,9 +222,10 @@ public sealed class AccessorySession : IDisposable, IDeviceSession
     public void Calibrate()
     {
         if (Kind != "efw") throw new NotSupportedException("Calibration applies to EFW only");
+        _ = Status();
         Request(new { command = "calibrate" });
     }
-    public void Disconnect() { lock (gate) CloseWorker(); }
+    public void Disconnect() { lock (gate) { ConnectionRequested = false; recovery.Reset(); CloseWorker(); } }
     private void CloseWorker()
     {
         input?.Dispose(); input = null;

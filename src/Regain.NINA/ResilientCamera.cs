@@ -337,7 +337,10 @@ public sealed class ResilientCamera : BaseINPC, ICamera
             var owner = Session;
             var token = exposureCancel.Token;
             ExtendNinaTimeout(owner, sequence.ExposureTime);
-            exposure = Task.Run(() => owner.CaptureAsync(request, token), token);
+            var optics = peripheralRecovery;
+            exposure = Task.Run(() => optics is not null
+                ? optics.CaptureWithOpticsAsync(() => owner.CaptureAsync(request, token), token)
+                : owner.CaptureAsync(request, token), token);
             CameraLog.Session(Name, $"Capture {generation} started: {sequence.ExposureTime:G} s");
         }
     }
@@ -460,7 +463,7 @@ public sealed class ResilientCamera : BaseINPC, ICamera
     {
         RestoreNinaTimeout();
         if (profiles is null) return;
-        int budget = (int)Math.Min(int.MaxValue, Math.Ceiling(owner.CaptureTimeoutSeconds(seconds)));
+        int budget = (int)Math.Min(int.MaxValue, Math.Ceiling(owner.CaptureTimeoutSeconds(seconds) + (peripheralRecovery?.Enabled == true ? 180 : 0)));
         var settings = profiles.ActiveProfile.CameraSettings;
         if (settings.Timeout >= budget) return;
         timeoutSettings = settings;

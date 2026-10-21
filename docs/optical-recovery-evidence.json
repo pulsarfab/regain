@@ -1,0 +1,83 @@
+{
+  "date": "2026-10-21",
+  "nina_version": "3.2.0.9001",
+  "camera": {
+    "model": "ZWO ASI6200MM Pro",
+    "backend": "direct USB",
+    "width": 9576,
+    "height": 6388,
+    "exposure_seconds": 5,
+    "binning": "1x1",
+    "format": "RAW16"
+  },
+  "accessories": {
+    "kind": "controlled worker protocol fixtures; no physical EFW/CAA attached",
+    "efw_slot": 3,
+    "caa_degrees": 30
+  },
+  "capture_checks": [
+    {
+      "case": "baseline",
+      "image_delivered": true
+    },
+    {
+      "case": "group-loss",
+      "image_delivered": true
+    },
+    {
+      "case": "steady-after-recovery",
+      "image_delivered": true
+    },
+    {
+      "case": "disconnect-during-exposure",
+      "image_delivered": false
+    },
+    {
+      "case": "next-frame-after-interruption",
+      "image_delivered": true
+    },
+    {
+      "case": "changed-wheel",
+      "image_delivered": false
+    },
+    {
+      "case": "blocked-follow-up",
+      "image_delivered": false
+    },
+    {
+      "case": "changed-caa",
+      "image_delivered": false
+    },
+    {
+      "case": "verified-after-explicit-reconnect",
+      "image_delivered": true
+    },
+    {
+      "case": "disconnected-wheel-blocked",
+      "image_delivered": false
+    }
+  ],
+  "forbidden_motion_commands": [],
+  "tests": {
+    "nina": {
+      "passed": 689,
+      "skipped": 5,
+      "failed": 0
+    },
+    "core": {
+      "passed": 185,
+      "failed": 0
+    },
+    "ascom_build": "passed"
+  },
+  "saved_full_frames": 5,
+  "source_sha256": {
+    "src/Regain.Rotator/OpticalStateRecovery.cs": "8ec887115881c51f77fd2afea1421f54bfb959e64d00989ec29289a2a1109622",
+    "src/Regain.Rotator/AccessorySession.cs": "2146fe5a620ac833e0e28d99bce1e4d60cda2f780af2a24f5c39e0bd1b25a51a",
+    "src/Regain.Rotator/CaaSession.cs": "3218ab9c657c78d766ccdd7511ac5ccc11625327cbc811dce10e444fdd87d868",
+    "src/Regain.NINA/UsbPeripheralRecovery.cs": "a6828440b7291a556e3564a41fa28dd2ce7154da3ca6af16764f134b09007812",
+    "src/Regain.NINA/NinaUsbPeripherals.cs": "284a315ae3f3c0055d78f5f5fdc92d7da0224fc61baa76732da669a04787f8b9",
+    "src/Regain.NINA/ResilientCamera.cs": "aeb6d9ae19149b667a83a01a6a6e26a4670f564f6dab35d67e6d694b0a23b068"
+  },
+  "source_hash_normalization": "UTF-8 with LF line endings"
+}

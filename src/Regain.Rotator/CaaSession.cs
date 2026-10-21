@@ -22,6 +22,7 @@ public sealed class CaaStatus
     [JsonPropertyName("moving")] public bool Moving { get; set; }
     [JsonPropertyName("limit_degrees")] public int Limit { get; set; }
     [JsonPropertyName("error")] public int Error { get; set; }
+    [JsonPropertyName("reverse")] public bool Reverse { get; set; }
     [JsonPropertyName("motion_error")] public string? MotionError { get; set; }
 }
 
@@ -35,6 +36,8 @@ public sealed class CaaChoice
 /// One exclusive SDK-free Rust worker per rotator. Commands are never replayed.
 public sealed class CaaSession : IDisposable, IDeviceSession
 {
+    // Half the CAA step: absorb representation noise without accepting a full motor step.
+    public const double OpticalToleranceDegrees = .01;
     public bool IsFalcon { get; }
     public string ModelName => IsFalcon ? "Pegasus Falcon V2" : "CAA Rotator";
     public string ActionPrefix => IsFalcon ? "Regain.Falcon." : "Regain.CAA.";
@@ -45,8 +48,13 @@ public sealed class CaaSession : IDisposable, IDeviceSession
     public string ProfilePath { get; }
     private Process? worker;
     private StreamWriter? input;
+    private readonly OpticalStateRecovery<CaaStatus> recovery = new();
+    private bool opening;
+    public bool ConnectionRequested { get; private set; }
+    public string OpticalConnectionEpoch { get { lock (gate) { recovery.RequireVerified(); return recovery.ConnectionEpoch; } } }
     public Action<string>? Log { get; set; }
-    public bool Connected { get { lock (gate) return worker is { HasExited: false }; } }
+    private bool WorkerConnected => worker is { HasExited: false };
+    public bool Connected { get { lock (gate) return ConnectionRequested && !recovery.IsBlocked && (WorkerConnected || recovery.CanRecover); } }
     public CaaProfile Profile { get; private set; }
     public CaaSession(string executable, string profilePath, bool falcon = false)
     {
@@ -113,12 +121,16 @@ public sealed class CaaSession : IDisposable, IDeviceSession
             if (File.Exists(ProfilePath)) File.Replace(temporary, ProfilePath, null); else File.Move(temporary, ProfilePath);
         } finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }
-    public void Connect()
+    public void Connect() => Open(false);
+    private void Open(bool recovering)
     {
         lock (gate) {
-            if (Connected) return;
+            if (WorkerConnected && !recovery.IsBlocked) return;
+            CloseWorker();
+            if (!recovering) ConnectionRequested = true;
             // Setup may have been opened by a separate ASCOM instance since this one was created.
-            Profile = ReadProfile();
+            if (!recovering) { Profile = ReadProfile(); recovery.Reset(); }
+            else if (ReadProfile().Serial != Profile.Serial) throw new IOException("Rotator selection changed during recovery");
             Diagnostic("Connecting rotator; settings: " + ProfilePath + "; worker: " + executable);
             if (string.IsNullOrEmpty(Profile.Serial)) {
                 var choices = Discover();
@@ -130,6 +142,7 @@ public sealed class CaaSession : IDisposable, IDeviceSession
             if (!ValidSerial(Profile.Serial)) throw new InvalidOperationException("The saved rotator selection is invalid. Choose a rotator in setup.");
             worker?.Dispose(); worker = Start("serve --serial " + Profile.Serial);
             input = new StreamWriter(worker.StandardInput.BaseStream, new System.Text.UTF8Encoding(false)) { AutoFlush = true };
+            opening = true;
             try {
                 var identity = Request(new { command = "identity" });
                 if (!string.Equals(identity.GetProperty("serial").GetString(), Profile.Serial, StringComparison.OrdinalIgnoreCase)) throw new IOException("Rotator identity changed");
@@ -141,32 +154,67 @@ public sealed class CaaSession : IDisposable, IDeviceSession
                 Request(new { command = "sync", degrees = Wrap(status.Logical + Profile.LogicalOffset) });
                 Diagnostic("Connected rotator using the native Rust worker");
             } catch { CloseWorker(); throw; }
+            finally { opening = false; }
         }
     }
     public JsonElement Request(object request)
     {
         lock (gate) {
-            if (!Connected) throw new InvalidOperationException("Rotator is disconnected");
+            if (!WorkerConnected) throw new InvalidOperationException("Rotator is disconnected");
+            string name = JsonSerializer.SerializeToElement(request).GetProperty("command").GetString()!;
+            bool write = !IsFalcon && !opening && name is not ("identity" or "status" or "settings" or "stop");
+            if (write) recovery.Writing();
+            bool acknowledged = false;
             try {
                 input!.WriteLine(JsonSerializer.Serialize(request));
                 var read = worker!.StandardOutput.ReadLineAsync();
                 if (!read.Wait(TimeSpan.FromSeconds(10))) { CloseWorker(); throw new TimeoutException("Rotator worker timed out; motion was not retried"); }
                 using var document = JsonDocument.Parse(read.Result ?? throw new IOException("Rotator worker exited"));
+                acknowledged = true;
                 if (!document.RootElement.GetProperty("ok").GetBoolean()) throw new InvalidOperationException(document.RootElement.GetProperty("error").GetString());
                 return document.RootElement.GetProperty("result").Clone();
-            } catch (Exception e) { Diagnostic(e.Message); throw; }
+            } catch (Exception e) { if (write && !acknowledged) recovery.Uncertain(e); Diagnostic(e.Message); throw; }
         }
     }
     public static double Wrap(double degrees) => (degrees % 360 + 360) % 360;
     public CaaStatus Status()
     {
         lock (gate) {
-            var status = JsonSerializer.Deserialize<CaaStatus>(Request(new { command = "status" }).GetRawText())!;
+            CaaStatus Read() {
+                var state = JsonSerializer.Deserialize<CaaStatus>(Request(new { command = "status" }).GetRawText())!;
+                if (!IsFalcon) state.Reverse = Request(new { command = "settings" }).GetProperty("reverse").GetBoolean();
+                return state;
+            }
+            var status = IsFalcon || opening ? Read() : recovery.Read(Read, () => Open(true), CloseWorker,
+                value => !value.Moving && value.Error == 0 && value.MotionError is null,
+                (before, after) => Math.Abs(before.Mechanical - after.Mechanical) <= OpticalToleranceDegrees &&
+                    Math.Abs(before.Logical - after.Logical) <= OpticalToleranceDegrees && Math.Abs(before.Offset - after.Offset) <= OpticalToleranceDegrees && before.Limit == after.Limit && before.Reverse == after.Reverse,
+                Diagnostic);
             if (Profile.CoordinatesUncertain && !status.Moving && status.Error == 0 && status.MotionError is null) {
                 Profile.LogicalOffset = status.Offset; Profile.CoordinatesUncertain = false; Save();
             }
             return status;
         }
+    }
+    public string VerifiedOpticalState()
+    {
+        var state = Status(); CheckMotion(state);
+        if (state.Moving || double.IsNaN(state.Mechanical) || double.IsInfinity(state.Mechanical) ||
+            double.IsNaN(state.Logical) || double.IsInfinity(state.Logical) || double.IsNaN(state.Offset) || double.IsInfinity(state.Offset))
+            throw new IOException("Rotator position is unknown or moving; exposure is blocked.");
+        return string.Join("|", Profile.Serial, state.Mechanical.ToString("R", System.Globalization.CultureInfo.InvariantCulture),
+            state.Logical.ToString("R", System.Globalization.CultureInfo.InvariantCulture), state.Offset.ToString("R", System.Globalization.CultureInfo.InvariantCulture), state.Limit, state.Reverse ? "1" : "0");
+    }
+    public static bool OpticalStatesMatch(string before, string after)
+    {
+        var a = before.Split('|'); var b = after.Split('|');
+        if (a.Length != 6 || b.Length != 6 || a[0] != b[0] || a[4] != b[4] || a[5] != b[5]) return false;
+        for (int i = 1; i <= 3; i++) {
+            if (!double.TryParse(a[i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double x) ||
+                !double.TryParse(b[i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double y) ||
+                double.IsNaN(x) || double.IsInfinity(x) || double.IsNaN(y) || double.IsInfinity(y) || Math.Abs(x - y) > OpticalToleranceDegrees) return false;
+        }
+        return true;
     }
     public void CheckMotion(CaaStatus status)
     {
@@ -180,7 +228,7 @@ public sealed class CaaSession : IDisposable, IDeviceSession
             Save();
         }
     }
-    public void Command(string name, double degrees) => Request(new { command = name, degrees });
+    public void Command(string name, double degrees) { if (!IsFalcon) { var state = Status(); CheckMotion(state); } Request(new { command = name, degrees }); }
     public void Sync(double degrees) { Command("sync", degrees); RememberCoordinates(true); }
     public void Halt() { Request(new { command = "stop" }); RememberCoordinates(); }
     public static readonly string[] Actions = { "Regain.CAA.Status", "Regain.CAA.Settings", "Regain.CAA.Identity", "Regain.CAA.SetReference", "Regain.CAA.SetLimit", "Regain.CAA.SetBeep", "Regain.CAA.SetAlias", "Regain.CAA.RotateUnwrapped", "Regain.CAA.ResetOrigin" };
@@ -215,8 +263,8 @@ public sealed class CaaSession : IDisposable, IDeviceSession
     public void Disconnect()
     {
         lock (gate) {
-            try { if (Connected) { Halt(); Diagnostic("Disconnected rotator"); } }
-            finally { CloseWorker(); }
+            try { if (WorkerConnected && !recovery.IsBlocked) { Halt(); Diagnostic("Disconnected rotator"); } }
+            finally { ConnectionRequested = false; recovery.Reset(); CloseWorker(); }
         }
     }
     private void CloseWorker()
