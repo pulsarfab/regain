@@ -1,0 +1,151 @@
+{
+  "date": "2026-10-21",
+  "nina_version": "3.2.0.9001",
+  "caa": {
+    "model": "CAA-M54",
+    "serial": "060030eda0caec30",
+    "firmware": "1.1.1",
+    "mechanical_degrees": 90,
+    "logical_degrees": 90,
+    "logical_offset": 0,
+    "reverse": false,
+    "limit_degrees": 360,
+    "idle": true
+  },
+  "camera": {
+    "model": "ZWO ASI6200MM Pro",
+    "backend": "direct USB",
+    "width": 9576,
+    "height": 6388,
+    "format": "RAW16",
+    "binning": "1x1",
+    "exposure_seconds": 5
+  },
+  "method": "Test-only exact CAA downstream USB_HUB_CYCLE_PORT; no parent-hub reset, PnP disable or camera reset. Production camera helper permissions were not expanded.",
+  "usb_cycles": [
+    {
+      "afterGeneration": 134370813546927883,
+      "beforeGeneration": 134370808396270499,
+      "cameraAfterGeneration": 134364406849869798,
+      "cameraBeforeGeneration": 134364406849869798,
+      "elapsedMs": 153,
+      "error": null,
+      "method": "USB_HUB_CYCLE_PORT",
+      "restored": true,
+      "success": true
+    },
+    {
+      "afterGeneration": 134370813736280654,
+      "beforeGeneration": 134370813546927883,
+      "cameraAfterGeneration": 134364406849869798,
+      "cameraBeforeGeneration": 134364406849869798,
+      "elapsedMs": 152,
+      "error": null,
+      "method": "USB_HUB_CYCLE_PORT",
+      "restored": true,
+      "success": true
+    }
+  ],
+  "capture_checks": [
+    {
+      "case": "baseline",
+      "image_delivered": true
+    },
+    {
+      "case": "recovered-before-exposure",
+      "image_delivered": true
+    },
+    {
+      "case": "steady-after-first-usb",
+      "image_delivered": true
+    },
+    {
+      "case": "interrupted-physical-caa",
+      "image_delivered": false
+    },
+    {
+      "case": "fresh-after-interruption",
+      "image_delivered": true
+    },
+    {
+      "case": "final-steady",
+      "image_delivered": true
+    }
+  ],
+  "verified_states": [
+    {
+      "id": "state-before-usb",
+      "ok": true,
+      "state": "060030eda0caec30|90|90|0|360|0",
+      "epoch": "6987027b2bc14a5f9de879dce0999182:2",
+      "connected": true
+    },
+    {
+      "id": "state-after-first-usb",
+      "ok": true,
+      "state": "060030eda0caec30|90|90|0|360|0",
+      "epoch": "6987027b2bc14a5f9de879dce0999182:3",
+      "connected": true
+    },
+    {
+      "id": "state-after-second-usb",
+      "ok": true,
+      "state": "060030eda0caec30|90|90|0|360|0",
+      "epoch": "6987027b2bc14a5f9de879dce0999182:4",
+      "connected": true
+    }
+  ],
+  "saved_frames": [
+    {
+      "file": "baseline.fits",
+      "width": 9576,
+      "height": 6388,
+      "pixel_sha256": "24826e6d88f518435bcbc991b5f436ef380cbac91854cfb1f362d5a8e26b46da",
+      "file_sha256": "b782494903357de45491da27e11c9e56f12d2c039288ff907a075a15b67e47f0"
+    },
+    {
+      "file": "final-steady.fits",
+      "width": 9576,
+      "height": 6388,
+      "pixel_sha256": "e32962b8cc1bd297f9d9f9dd7fe36b421510bd50c4b704ed74c1aae2fb3f104e",
+      "file_sha256": "7a81637f3c2cd725871d4d8a9cddbbdb32a1c2ea857ac82cc3c21a7828a445e1"
+    },
+    {
+      "file": "fresh-after-interruption.fits",
+      "width": 9576,
+      "height": 6388,
+      "pixel_sha256": "c7830dbca55b1a5ac3a44d630b93cef0e1dea256eab528818be4024517f7ac06",
+      "file_sha256": "b392e3ae51a1e2dcf350bef14ff0a7f12a39aa3ceff0909cf8f18f5f11525f2b"
+    },
+    {
+      "file": "recovered-before-exposure.fits",
+      "width": 9576,
+      "height": 6388,
+      "pixel_sha256": "3299285aa5bc3b8a14ce2eb2f10fbd4a932603b9808aa370f9288ba5d65dc449",
+      "file_sha256": "c350dcc6efc2532b8d78a1a8a93a3b60d04dc5ad7d1662010025576eb2cb6be6"
+    },
+    {
+      "file": "steady-after-first-usb.fits",
+      "width": 9576,
+      "height": 6388,
+      "pixel_sha256": "50a06a61aeeb15afacf98d5034414372cb269b6b70550c58df502159e42ef291",
+      "file_sha256": "c3929add27b91ef98280263117bf56d0973537a61094b8806c0066f47128b754"
+    }
+  ],
+  "motion_requested": false,
+  "original_installation_restored": true,
+  "limits": [
+    "No physical EFW was attached; EFW recovery retains the separate injected-worker acceptance.",
+    "No whole-cable power interruption or extended absence was tested.",
+    "The interrupted image is withheld, and the next requested capture succeeds; NINA sequence-level retry policy remains separate."
+  ],
+  "source_sha256": {
+    "src/Regain.Rotator/OpticalStateRecovery.cs": "8ec887115881c51f77fd2afea1421f54bfb959e64d00989ec29289a2a1109622",
+    "src/Regain.Rotator/AccessorySession.cs": "2146fe5a620ac833e0e28d99bce1e4d60cda2f780af2a24f5c39e0bd1b25a51a",
+    "src/Regain.Rotator/CaaSession.cs": "3218ab9c657c78d766ccdd7511ac5ccc11625327cbc811dce10e444fdd87d868",
+    "src/Regain.NINA/UsbPeripheralRecovery.cs": "a6828440b7291a556e3564a41fa28dd2ce7154da3ca6af16764f134b09007812",
+    "src/Regain.NINA/NinaUsbPeripherals.cs": "284a315ae3f3c0055d78f5f5fdc92d7da0224fc61baa76732da669a04787f8b9",
+    "src/Regain.NINA/ResilientCamera.cs": "aeb6d9ae19149b667a83a01a6a6e26a4670f564f6dab35d67e6d694b0a23b068"
+  },
+  "source_hash_normalization": "UTF-8 with LF line endings"
+}

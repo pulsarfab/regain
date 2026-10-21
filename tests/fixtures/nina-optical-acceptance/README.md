@@ -39,3 +39,14 @@ request mailbox uses only a fixed command list; it is not a general shell or
 remote-control interface. Restore the installed DLLs, settings and original NINA
 profile after testing. Physical EFW/CAA cable removal and long USB absences need
 separate hardware validation; this fixture does not establish either.
+
+For a physical CAA-only pass, set
+`REGAIN_NINA_OPTICAL_ACCEPTANCE_NO_WHEEL=1` and bind the isolated CAA profile to
+the actual hardware serial. Do not set `REGAIN_OPTICAL_FIXTURE_DIRECTORY` or
+point either worker variable at `OpticalWorkerFixture`. The
+`rotator-state` mailbox command returns a fresh verified optical state and its
+connection epoch. Preserve the original angle, logical offset, reverse and limit
+settings. A separate, bounded USB interruption fixture or a cable disconnect is
+required; the NINA harness itself cannot disable USB devices. An exact downstream
+port cycle tests handle invalidation and reconnection, not sustained power loss.
+Do not run the injected-worker Python runner against physical accessories.

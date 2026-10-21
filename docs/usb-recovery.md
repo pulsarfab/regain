@@ -170,6 +170,19 @@ the verified next capture succeeded without a move replay. The
 [test procedure](../tests/fixtures/nina-optical-acceptance/README.md) is repeatable.
 These fixtures do not establish physical EFW/CAA unplug or power-loss recovery.
 
+A subsequent [physical CAA pass](physical-caa-recovery-evidence.json) used the
+CAA-M54 and the same camera in installed NINA. Two exact downstream USB port
+cycles invalidated the CAA handle and changed its Windows arrival generation;
+the camera's generation stayed unchanged. Regain reopened the same CAA serial
+on its first recovery attempt and verified the unchanged idle 90-degree position,
+logical offset, reverse and limit. A cycle before capture allowed a fresh image.
+A cycle during exposure withheld that frame; the next two captures succeeded
+without manual reconnection. Five full-frame FITS images, including the baseline,
+had distinct pixel hashes. No movement or origin change was requested.
+The original installation and profile were restored. This verifies CAA USB
+re-enumeration, not whole-cable power loss or an extended absence. Physical EFW
+reconnection remains untested.
+
 For other NINA providers, the camera's existing reconnection pass runs after
 Regain initiates a camera USB reset. The disconnect window applies to that pass;
 it is not a blanket reconnect trigger for unrelated or intentional disconnects.

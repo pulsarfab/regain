@@ -69,13 +69,21 @@ public sealed class AcceptancePlugin : PluginBase
             try {
                 switch (request.RootElement.GetProperty("command").GetString()) {
                     case "connect":
-                        await wheel.Rescan(); await Select(wheel, "ZwoGain.EFW");
-                        if (!await wheel.Connect()) throw new Exception("Wheel connect failed");
+                        if (Environment.GetEnvironmentVariable("REGAIN_NINA_OPTICAL_ACCEPTANCE_NO_WHEEL") != "1") {
+                            await wheel.Rescan(); await Select(wheel, "ZwoGain.EFW");
+                            if (!await wheel.Connect()) throw new Exception("Wheel connect failed");
+                        }
                         await rotator.Rescan(); await Select(rotator, "ZwoGain.CAA");
                         if (!await rotator.Connect()) throw new Exception("Rotator connect failed");
                         await camera.Rescan(); await Select(camera, "ZwoGain");
                         if (!await camera.Connect()) throw new Exception("Camera connect failed");
-                        response = new { id, ok = true, camera = camera.GetDevice().Name, wheel = wheel.GetDevice().Name, rotator = rotator.GetDevice().Name }; break;
+                        response = new { id, ok = true, camera = camera.GetDevice().Name, wheel = wheel.GetDevice()?.Name, rotator = rotator.GetDevice().Name }; break;
+                    case "rotator-state":
+                        var device = rotator.GetDevice() ?? throw new Exception("Rotator unavailable");
+                        var state = device.GetType().GetMethod("ReadVerifiedOpticalState")?.Invoke(device, null)
+                            ?? throw new Exception("Verified optical state unavailable");
+                        var epoch = device.GetType().GetProperty("OpticalConnectionEpoch")?.GetValue(device);
+                        response = new { id, ok = true, state, epoch, connected = device.Connected }; break;
                     case "capture":
                         var seq = new CaptureSequence { ExposureTime = 5, Binning = new BinningMode(1, 1), Gain = 100, Offset = 30 };
                         var exposure = await imaging.CaptureImage(seq, lifetime.Token, null, "Regain optical recovery acceptance");
