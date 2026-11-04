@@ -75,7 +75,8 @@ fn text(bytes: &[c_char]) -> Result<String> {
         .position(|&v| v == 0)
         .context("Unterminated QHY string")?;
     Ok(String::from_utf8(
-        bytes[..end].iter().map(|&v| v as u8).collect(),
+        // C char is signed on Windows/x86 and unsigned on some ARM targets.
+        bytes[..end].iter().map(|v| v.to_ne_bytes()[0]).collect(),
     )?)
 }
 pub fn frame_bytes(width: u32, height: u32) -> Result<usize> {
