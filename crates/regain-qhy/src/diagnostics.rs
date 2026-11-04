@@ -1,6 +1,7 @@
 //! Both QHY backends use the common asynchronous recorder and runtime toggle.
 pub use regain_core::diagnostics::configure;
 use serde_json::{Value, json};
+#[cfg(any(windows, test))]
 pub fn record(details: Value) {
     let operation = details
         .get("operation")

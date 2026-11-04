@@ -339,6 +339,13 @@ impl Host {
         self.tick = Instant::now();
         Ok(())
     }
+    fn idle(&mut self) -> Result<()> {
+        #[cfg(windows)]
+        if let Some(Backend::Direct(c)) = self.backend.as_mut() {
+            c.pump_video()?;
+        }
+        self.tick()
+    }
     fn stop(&mut self) -> Result<()> {
         self.stop_with(|backend| backend.context("Camera not open")?.stop())
     }
@@ -909,13 +916,7 @@ pub fn run(direct: bool, args: Vec<String>) -> Result<()> {
         || {
             let mut h = h.borrow_mut();
             if h.background_error.is_none() {
-                let result = (|| -> Result<()> {
-                    #[cfg(windows)]
-                    if let Some(Backend::Direct(c)) = h.backend.as_mut() {
-                        c.pump_video()?;
-                    }
-                    h.tick()
-                })();
+                let result = h.idle();
                 if let Err(error) = result {
                     crate::diagnostics::dump(&format!("QHY background owner: {error:#}"));
                     h.background_error = Some(format!("{error:#}"));

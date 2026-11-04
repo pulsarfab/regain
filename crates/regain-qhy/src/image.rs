@@ -51,7 +51,7 @@ mod tests {
     #[test]
     fn full_sensor_and_overlapping_crop_reuse_allocation() {
         let mut pixels = zeroed(9600 * 6422 * 2).unwrap();
-        for (index, pixel) in pixels.chunks_exact_mut(2).enumerate() {
+        for (index, pixel) in pixels.as_chunks_mut::<2>().0.iter_mut().enumerate() {
             pixel.copy_from_slice(&(index as u16).to_le_bytes());
         }
         let allocation = pixels.as_ptr();
@@ -60,9 +60,9 @@ mod tests {
         let pixels = crop_raw16(pixels, 9600, 6422, 3, 2, 9597, 6420).unwrap();
         assert_eq!(pixels.as_ptr(), allocation);
         assert_eq!(pixels.len(), 9597 * 6420 * 2);
-        for (index, pixel) in pixels.chunks_exact(2).enumerate() {
+        for (index, pixel) in pixels.as_chunks::<2>().0.iter().enumerate() {
             let source = ((index / 9597 + 2) * 9600 + index % 9597 + 3) as u16;
-            assert_eq!(pixel, source.to_le_bytes());
+            assert_eq!(*pixel, source.to_le_bytes());
         }
     }
 
