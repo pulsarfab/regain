@@ -80,6 +80,10 @@ explicit replacement exposure instead of rereading the old frame.
 [QHY600 setup and current scope](docs/qhy600.md). Its [4-pin filter wheel](docs/qhycfw3.md) shares the camera connection in NINA, native ASCOM, and Alpaca. The standalone
 USB wheel entry works without a camera connection or vendor SDK.
 
+Pier-camera clients can also opt into [QHY600 Direct USB video](docs/qhy600-video.md):
+full-frame mode 0 RAW16 with continuous USB draining, latest-frame delivery and
+fractional FPS limits. Ordinary frontend exposures remain unchanged.
+
 <a id="how-retries-work"></a>
 
 By default, regain allows **two download retries** and **three replacement

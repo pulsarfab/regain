@@ -25,7 +25,7 @@ Direct mode checks the firmware date and traced EEPROM model signature before wr
 - `regain-transport::cypress`: driver enumeration and bounded overlapped transfers. Outstanding I/O reaches terminal completion before freeing buffers; a non-draining driver terminates its isolated worker.
 - `regain-core::thermal`: the bounded PI cooler policy used by ZWO, with a live power-change limit, default 25 percentage points per five seconds.
 - `regain-core::diagnostics`: circular memory/disk history, error-triggered batches and live off/circular/verbose modes.
-- `regain-worker::camera`: bounded framed JSON replies and separate image bytes.
+- `regain-core::continuous`: shared camera framing, independent USB owner/output, latest-frame delivery and settings generations.
 - `regain-qhy`: QHY identity, USB commands, SDK ABI and acquisition lifecycle.
 
 NINA, native ASCOM camera slots and Alpaca camera slots route canonical QHY models to `regain-device qhy camera-direct` or `camera-sdk`. Existing ZWO profiles remain compatible. Select the complete QHY camera ID. QHY privileged USB-reset escalation is disabled; ZWO identity/reset logic must never be applied to it.
@@ -69,7 +69,7 @@ The SDK can report `GetQHYCCDExposureRemaining <= 100` immediately after startin
 
 ## Capabilities and evidence
 
-Current worker: mode 0, bin 1, RAW16, software ROI from full-sensor captures, gain, offset, USB traffic, temperature, cooler power and target. Modes 1 and 2 have reference captures but are not frontend capabilities. Video, hardware binning, dew heater, Linux direct USB and retained-frame rereads are not claimed.
+Current worker: mode 0, bin 1, RAW16, software ROI from full-sensor still captures, gain, offset, USB traffic, temperature, cooler power and target. The direct worker also exposes [full-frame RAW16 video](qhy600-video.md). Other read modes have SDK reference captures but are not frontend capabilities. Hardware binning, dew heater, Linux direct USB and retained-frame rereads are not claimed.
 
 ### SDK video acceptance (2026-11-03)
 
@@ -117,9 +117,36 @@ case with the existing Frida-enabled probe environment:
 artifacts/qhy600/venv/Scripts/python.exe scripts/inspection/qhy_sdk_probe.py --live --mode 0 --bits 16 --frames 10 --seconds 0.1 --output artifacts/qhy600/NEW-VIDEO-RUN
 ```
 
-These are **SDK reference tests**, not Regain frontend video acceptance. QHY
-video and these additional read modes remain unexposed in NINA, ASCOM, Alpaca,
-and the direct USB worker.
+These are **SDK reference tests**, not Regain frontend video acceptance.
+NINA, ASCOM and Alpaca retain single exposures. The direct worker exposes only
+photographic mode 0 RAW16 video; RAW8 and the additional read modes remain
+reference-tested extensions.
+
+### Direct USB video acceptance (2026-11-03)
+
+The [worker video protocol](qhy600-video.md) now exposes photographic mode 0,
+full-frame RAW16 through the same continuous coordinator as the ZWO pier cameras.
+QHY declares that exposure/gain edits require a restart; the shared coordinator
+retains ZWO's existing scalar-update behavior. Asynchronous Cypress reads keep
+the acquisition owner available for thermal updates and cancellation.
+
+All 20 SDK live frames matched the decoded USB payload byte-for-byte, including
+the 34-row removal and endian conversion. The final direct acceptance delivered
+39 distinct full-sensor frames: repeated capture, fractional FPS, paused and
+blocked output, settings changes, cancellation/restart, streaming, and three
+five-second stills after video. Acquisition continued during blocked pipe output;
+pending USB reads and long delivery pacing both canceled within three seconds.
+The direct worker had no vendor camera SDK loaded.
+
+Evidence: `video-wire-m0-16-01/wire-verification.json`,
+`direct-video-02/results.jsonl`, and `direct-video-02/sdk-module-check.json`
+under `artifacts/qhy600/`. The full workspace passed 1,135 tests before the final
+review adjustments; all 311 tests in the affected core/QHY/ZWO/transport suites
+passed afterward, as did targeted clippy with warnings denied and release builds.
+The final production-supervisor regression then passed four full five-second
+stills per backend, including cancel/restart, with zero replacement exposures,
+download retries or SDK fallback. Those results are in
+`direct-video-stills-{direct,sdk}-01/results.json`.
 
 ### Review: image memory pressure
 
@@ -183,4 +210,4 @@ python scripts/inspection/qhy_acceptance.py --backend sdk --cooling-recovery --o
 - [x] Explicit first-release scope: traced U3G20 firmware, photographic mode 0, RAW16, bin 1.
 - [x] Crate package contents and user documentation; no SDK redistribution.
 
-Remaining release work is the normal review, signed-package build and installer acceptance. Broader revisions, other read modes, video, hardware binning, Linux direct USB and privileged USB-reset integration are separate extensions. Physical tests used five-second full frames; the advertised one-hour SDK limit was not tested with hour-long integrations.
+Remaining release work is the normal review, signed-package build and installer acceptance. Broader revisions, other read modes, frontend Live View, hardware binning, Linux direct USB and privileged USB-reset integration are separate extensions. Physical still tests used five-second full frames; the advertised one-hour SDK limit was not tested with hour-long integrations.

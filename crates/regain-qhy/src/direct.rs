@@ -1,7 +1,7 @@
 //! QHY600 U3G20 reference implementation, derived from SDK USB traces.
 //! Never loads the QHY SDK. Validated scope: full-sensor mode 0 on the traced revision.
 use anyhow::{Context, Result, ensure};
-use regain_transport::cypress::{Device, enumerate};
+use regain_transport::cypress::{Device, PendingRead, enumerate};
 use serde_json::json;
 use std::{
     path::PathBuf,
@@ -12,6 +12,20 @@ const INTERFACE: u128 = 0xae18aa60_7f6a_11d4_97dd_00010229b959;
 const WIDTH: usize = 9600;
 const HEIGHT: usize = 6422;
 const LEADING_ROWS: usize = 34;
+const VIDEO_CHUNK: usize = 512 * 1024;
+
+struct Video {
+    pending: Option<PendingRead>,
+    wire: Vec<u8>,
+    candidate: Option<usize>,
+    latest: Option<Vec<u8>>,
+    sequence: u64,
+    dropped: u64,
+    progress: Instant,
+    microseconds: u32,
+    settling_until: Instant,
+    discard: u32,
+}
 
 /// Match SDK's historical overlapping hexadecimal formatting. Preserve the full
 /// UID separately: this lossy display ID alone is not proof of unique hardware.
@@ -27,6 +41,8 @@ pub struct Camera {
     device: Device,
     pub identity: serde_json::Value,
     active: bool,
+    video: Option<Box<Video>>,
+    last_exposure_us: u32,
 }
 impl Camera {
     /// Camera UART bridge traced from IsQHYCCDCFWPlugged/GetCFWStatus.
@@ -98,6 +114,8 @@ impl Camera {
             device,
             identity,
             active: false,
+            video: None,
+            last_exposure_us: 5_000_000,
         })
     }
     fn read(&self, request: u8, index: u16, len: usize) -> Result<Vec<u8>> {
@@ -171,6 +189,9 @@ impl Camera {
         self.command(0xa5, &[value], 16)
     }
     pub fn initialize(&mut self) -> Result<()> {
+        self.initialize_mode(false)
+    }
+    fn initialize_mode(&mut self, video: bool) -> Result<()> {
         self.device.transfer_size(0x81, 512 * 1024)?;
         // InitQHYCCD consumes one 16 KiB endpoint block before initialization.
         // This clears residual transport data when changing camera owners.
@@ -178,13 +199,16 @@ impl Camera {
         // Read the same feature/status pages as SDK initialization.
         self.read(0xd5, 7, 64)?;
         self.read(0xd5, 2, 64)?;
-        self.command(0xa0, &[1], 16)?; // single-frame operation
-        self.register(0xb9, 0x62, 0)?;
-        // Register 0x62 itself takes ~1.4 s. The SDK waits another 200 ms
-        // after completion, not another full register round-trip duration.
-        std::thread::sleep(Duration::from_millis(200));
-        self.command(0xa3, &5_000_000u32.to_be_bytes(), 16)?;
-        std::thread::sleep(Duration::from_millis(210));
+        self.command(0xa0, &[u8::from(!video)], 16)?; // SDK stream selection
+        if !video {
+            self.register(0xb9, 0x62, 0)?;
+            // Register 0x62 itself takes ~1.4 s. The SDK waits another 200 ms
+            // after completion, not another full register round-trip duration.
+            std::thread::sleep(Duration::from_millis(200));
+            self.command(0xa3, &5_000_000u32.to_be_bytes(), 16)?;
+            std::thread::sleep(Duration::from_millis(210));
+            self.last_exposure_us = 5_000_000;
+        }
         // Photographic mode 0, gain30. A4 combines analogue/digital gain and
         // read-mode fields. Remaining bytes in SDK trace are unused stack data.
         self.command(
@@ -199,6 +223,108 @@ impl Camera {
         self.command(0xa7, &[1], 16)?; // RAW16
         Ok(())
     }
+    pub fn video_running(&self) -> bool {
+        self.video.is_some()
+    }
+    pub fn start_video(&mut self, microseconds: u32) -> Result<()> {
+        ensure!(
+            !self.active && self.video.is_none(),
+            "QHY acquisition already active"
+        );
+        ensure!(
+            (1..=30_000_000).contains(&microseconds),
+            "QHY video exposure outside 1 us..30 s"
+        );
+        let previous = self.last_exposure_us;
+        self.initialize_mode(true)?;
+        self.command(0xa2, &[0, 0, 0, 0, 0, 0x19, 0x38, 0, 0x19, 0], 16)?;
+        self.command(0xa3, &microseconds.to_be_bytes(), 16)?;
+        self.last_exposure_us = microseconds;
+        // Live SDK reads this feature page at a stream boundary. Its meaning
+        // is not established; retain the observed read, without inventing writes.
+        self.read(0xd5, 0x24, 64)?;
+        self.video = Some(Box::new(Video {
+            pending: None,
+            wire: Vec::new(),
+            candidate: None,
+            latest: None,
+            sequence: 0,
+            dropped: 0,
+            progress: Instant::now(),
+            microseconds,
+            settling_until: Instant::now()
+                + Duration::from_micros(u64::from(previous) + u64::from(microseconds)),
+            discard: 2,
+        }));
+        self.active = true;
+        Ok(())
+    }
+    /// Pump bounded asynchronous reads so thermal control and cancellation can
+    /// run while the camera integrates. At most one completed image is retained.
+    pub fn pump_video(&mut self) -> Result<()> {
+        let Some(video) = self.video.as_mut() else {
+            return Ok(());
+        };
+        let wire_bytes = (HEIGHT + LEADING_ROWS) * WIDTH * 2;
+        ensure!(
+            video.progress.elapsed()
+                < Duration::from_micros(u64::from(video.microseconds)) + Duration::from_secs(30),
+            "QHY video frame deadline exceeded"
+        );
+        for _ in 0..32 {
+            if video.pending.is_none() {
+                video.pending = Some(self.device.begin_read(0x81, VIDEO_CHUNK)?);
+            }
+            let Some(chunk) = video.pending.as_mut().unwrap().poll()? else {
+                break;
+            };
+            video.pending = None;
+            if video.wire.capacity() < wire_bytes + 4 * 1024 * 1024 + VIDEO_CHUNK {
+                video
+                    .wire
+                    .try_reserve_exact(
+                        wire_bytes + 4 * 1024 * 1024 + VIDEO_CHUNK - video.wire.len(),
+                    )
+                    .context("Cannot allocate QHY video frame")?;
+            }
+            video.wire.extend_from_slice(&chunk);
+            if let Some(at) = crate::framing::locate(&video.wire, &mut video.candidate, wire_bytes)?
+            {
+                let end = at + wire_bytes + 8;
+                // Preserve the next frame's partial header/payload; a USB read
+                // need not end on a frame boundary.
+                let tail = video.wire[end..].to_vec();
+                let mut pixels = std::mem::replace(&mut video.wire, tail);
+                video.candidate = None;
+                video.sequence += 1;
+                video.progress = Instant::now();
+                if video.discard > 0 || Instant::now() < video.settling_until {
+                    video.discard = video.discard.saturating_sub(1);
+                    video.dropped += 1;
+                    continue;
+                }
+                pixels.copy_within(at + LEADING_ROWS * WIDTH * 2..at + wire_bytes, 0);
+                pixels.truncate(WIDTH * HEIGHT * 2);
+                for pixel in pixels.chunks_exact_mut(2) {
+                    pixel.swap(0, 1);
+                }
+                if video.latest.replace(pixels).is_some() {
+                    video.dropped += 1;
+                }
+            }
+            ensure!(
+                video.wire.len() < wire_bytes + 4 * 1024 * 1024,
+                "QHY video frame exceeded bounded prefix"
+            );
+        }
+        Ok(())
+    }
+    pub fn video_status(&self) -> serde_json::Value {
+        self.video.as_ref().map_or(serde_json::Value::Null, |v| {
+            json!({"rawSequence":v.sequence,"discardedFrames":v.dropped,
+            "lastFrameAgeMilliseconds":v.progress.elapsed().as_millis(),"sensorTimestamp":null})
+        })
+    }
     pub fn start(&mut self, microseconds: u32) -> Result<()> {
         ensure!(!self.active, "QHY prior acquisition requires cleanup");
         ensure!(
@@ -209,6 +335,7 @@ impl Camera {
         // strips those rows. 0x1900 is the observed full-sensor span field.
         self.command(0xa2, &[0, 0, 0, 0, 0, 0x19, 0x38, 0, 0x19, 0], 16)?;
         self.command(0xa3, &microseconds.to_be_bytes(), 16)?;
+        self.last_exposure_us = microseconds;
         std::thread::sleep(Duration::from_millis(35));
         self.active = true;
         self.command(0xa6, &[0], 16)?;
@@ -218,6 +345,12 @@ impl Camera {
         Ok(())
     }
     pub fn stop(&mut self) -> Result<()> {
+        if self.video.is_some() {
+            self.video.take(); // PendingRead cancels and drains before freeing.
+            self.device.abort_pipe(0x81)?;
+            self.active = false;
+            return Ok(());
+        }
         self.device.abort_pipe(0x81)?;
         self.register(0xb9, 0x23, 0)?;
         self.active = false;
@@ -225,6 +358,9 @@ impl Camera {
     }
     pub fn ready(&self) -> Result<bool> {
         ensure!(self.active, "No QHY exposure");
+        if let Some(video) = &self.video {
+            return Ok(video.latest.is_some());
+        }
         let status = self.read(0xbc, 4, 4)?;
         Ok(
             u64::from(u32::from_le_bytes(status.try_into().unwrap())) * 32
@@ -233,6 +369,9 @@ impl Camera {
     }
     pub fn download(&mut self) -> Result<Vec<u8>> {
         ensure!(self.active, "No QHY exposure");
+        if let Some(video) = self.video.as_mut() {
+            return video.latest.take().context("QHY video frame not ready");
+        }
         // The SDK polls DDR occupancy in 32-byte units before the bulk drain.
         // Wait for the full wire image; never use elapsed integration alone as
         // proof that a frame is available.

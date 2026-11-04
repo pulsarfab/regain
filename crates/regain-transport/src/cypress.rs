@@ -4,6 +4,8 @@ use anyhow::{Context, Result, ensure};
 use std::{
     mem::size_of,
     ptr::{null, null_mut},
+    rc::Rc,
+    time::Instant,
 };
 use windows_sys::{
     Win32::{
@@ -122,7 +124,7 @@ pub fn enumerate(interface: u128, vendor: u16, product: u16) -> Result<Vec<Strin
 }
 
 pub struct Device {
-    handle: Handle,
+    handle: Rc<Handle>,
     trace: Option<fn(serde_json::Value)>,
 }
 impl Device {
@@ -147,12 +149,63 @@ impl Device {
             error()
         );
         Ok(Self {
-            handle: Handle(handle),
+            handle: Rc::new(Handle(handle)),
             trace: None,
         })
     }
     pub fn set_trace(&mut self, trace: fn(serde_json::Value)) {
         self.trace = Some(trace);
+    }
+    /// Start a bulk read without blocking the hardware owner. All storage and
+    /// the device handle remain owned by PendingRead until terminal completion.
+    pub fn begin_read(&self, endpoint: u8, size: usize) -> Result<PendingRead> {
+        ensure!(
+            endpoint & 0x80 != 0 && (1..=1024 * 1024).contains(&size),
+            "Invalid pending USB read"
+        );
+        let mut pixels = Vec::new();
+        pixels
+            .try_reserve_exact(size)
+            .context("Cannot allocate USB read buffer")?;
+        pixels.resize(size, 0);
+        let raw = unsafe { CreateEventW(null(), 1, 0, null()) };
+        ensure!(!raw.is_null(), "Create USB read event: {}", error());
+        let event = Handle(raw);
+        let mut overlap: Box<OVERLAPPED> = Box::new(unsafe { std::mem::zeroed() });
+        overlap.hEvent = event.0;
+        let mut read = PendingRead {
+            device: Rc::clone(&self.handle),
+            event,
+            overlap,
+            header: Box::new([0; HEADER]),
+            pixels,
+            terminal: true,
+            started: Instant::now(),
+            trace: self.trace,
+        };
+        read.header[13] = endpoint;
+        // SAFETY: boxed header/OVERLAPPED and allocated image storage do not move
+        // while the request is pending. Drop cancels and drains before freeing.
+        let ok = unsafe {
+            DeviceIoControl(
+                read.device.0,
+                0x22004b,
+                read.header.as_mut_ptr().cast(),
+                HEADER as u32,
+                read.pixels.as_mut_ptr().cast(),
+                size as u32,
+                null_mut(), // completion count belongs to the owned OVERLAPPED
+                &mut *read.overlap,
+            )
+        };
+        let failure = unsafe { GetLastError() };
+        ensure!(
+            ok != 0 || failure == ERROR_IO_PENDING,
+            "Submit USB read: {}",
+            std::io::Error::from_raw_os_error(failure as i32)
+        );
+        read.terminal = false;
+        Ok(read)
     }
     fn request(
         &self,
@@ -322,5 +375,81 @@ impl Device {
     pub fn abort_pipe(&self, endpoint: u8) -> Result<()> {
         self.request(0x220044, &mut [endpoint], Some(&mut []), 5000)?;
         Ok(())
+    }
+}
+
+/// Single-owner asynchronous read; intentionally neither Send nor Sync.
+pub struct PendingRead {
+    device: Rc<Handle>,
+    event: Handle,
+    overlap: Box<OVERLAPPED>,
+    header: Box<[u8; HEADER]>,
+    pixels: Vec<u8>,
+    terminal: bool,
+    started: Instant,
+    trace: Option<fn(serde_json::Value)>,
+}
+impl PendingRead {
+    pub fn poll(&mut self) -> Result<Option<Vec<u8>>> {
+        ensure!(!self.terminal, "USB read already consumed");
+        let mut bytes = 0;
+        let ok = unsafe { GetOverlappedResult(self.device.0, &*self.overlap, &mut bytes, 0) };
+        let failure = if ok != 0 {
+            0
+        } else {
+            unsafe { GetLastError() }
+        };
+        if failure == ERROR_IO_INCOMPLETE {
+            return Ok(None);
+        }
+        self.terminal = true;
+        let nt = u32::from_le_bytes(self.header[14..18].try_into().unwrap());
+        let usb = u32::from_le_bytes(self.header[18..22].try_into().unwrap());
+        if let Some(trace) = self.trace {
+            trace(
+                serde_json::json!({"operation":"Cypress USB async read","ioctl":0x22004b,
+            "endpoint":self.header[13],"requestedBytes":self.pixels.len(),"receivedBytes":bytes,
+            "elapsedUs":self.started.elapsed().as_micros(),"windowsError":failure,"ntStatus":nt,"usbStatus":usb}),
+            );
+        }
+        ensure!(
+            failure == 0 && nt == 0 && usb == 0,
+            "USB read failed: Windows={failure} NT={nt:#x} USBD={usb:#x}"
+        );
+        ensure!(
+            bytes > 0 && bytes as usize <= self.pixels.len(),
+            "Invalid USB read length {bytes}"
+        );
+        self.pixels.truncate(bytes as usize);
+        Ok(Some(std::mem::take(&mut self.pixels)))
+    }
+}
+impl Drop for PendingRead {
+    fn drop(&mut self) {
+        if self.terminal {
+            return;
+        }
+        // A canceled read can still write into its buffers. Never unwind/free
+        // them until the driver confirms a terminal result.
+        unsafe {
+            CancelIoEx(self.device.0, &*self.overlap);
+            if WaitForSingleObject(self.event.0, 2000) != WAIT_OBJECT_0 {
+                eprintln!(
+                    "USB video cancellation did not drain; terminating worker with buffers intact"
+                );
+                std::process::exit(125);
+            }
+            let mut bytes = 0;
+            let ok = GetOverlappedResult(self.device.0, &*self.overlap, &mut bytes, 0);
+            if ok == 0 && GetLastError() == ERROR_IO_INCOMPLETE {
+                std::process::exit(125);
+            }
+        }
+        if let Some(trace) = self.trace {
+            trace(
+                serde_json::json!({"operation":"Cypress USB async read cancelled",
+            "endpoint":self.header[13],"elapsedUs":self.started.elapsed().as_micros()}),
+            );
+        }
     }
 }

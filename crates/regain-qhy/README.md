@@ -8,7 +8,13 @@ must use the SDK until their direct protocol is validated.
 
 Downloads are consumptive. Failed images are discarded; the common supervisor
 can reconnect and take an explicitly reported replacement exposure. Same-frame
-rereads, video, hardware binning and privileged USB reset are not advertised.
+rereads, hardware binning and privileged USB reset are not advertised.
+
+The Windows direct pipe worker also supports opt-in full-frame RAW16 video in
+photographic mode 0, using the shared continuous acquisition protocol. USB reads
+continue independently of delivery FPS and slow clients. This does not add a
+NINA Live View or ASCOM/Alpaca readout mode. See
+[video protocol and limits](https://github.com/pulsarfab/regain/blob/main/docs/qhy600-video.md).
 
 The vendor SDK is loaded dynamically in the isolated device worker. Install the
 QHY system driver before discovery; the SDK DLL alone is insufficient on Windows.

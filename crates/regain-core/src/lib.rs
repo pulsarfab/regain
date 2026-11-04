@@ -18,3 +18,5 @@ pub mod thermal;
 
 pub mod diagnostics;
 mod flight_recorder;
+
+pub mod continuous;

@@ -137,6 +137,10 @@ struct Host {
     wheel_slots: Option<u8>,
     wheel_expected: Option<u8>,
     wheel_pending: Option<crate::cfw::Motion>,
+    video_params: Option<(Exposure, i64)>,
+    video_interval: Duration,
+    video_delivered: Option<Instant>,
+    background_error: Option<String>,
 }
 impl Host {
     fn wheel_status(&mut self) -> Result<Value> {
@@ -253,11 +257,14 @@ impl Host {
         Ok(())
     }
     fn stop(&mut self) -> Result<()> {
-        if self.exposure.take().is_some() {
+        if self.exposure.take().is_some() || self.video_params.is_some() {
             self.ready = false;
             self.cancelled = true;
             self.backend.as_mut().context("Camera not open")?.stop()?;
+            self.video_params = None;
+            self.video_delivered = None;
         }
+        self.background_error = None;
         Ok(())
     }
     fn close(&mut self) -> Result<()> {
@@ -404,16 +411,26 @@ impl Host {
             _ => "QHY600 direct".into(),
         };
         Ok(
-            json!({"info":info(&self.serial),"serial":self.serial,"sdkVersion":version,"controls":self.controls.values().collect::<Vec<_>>(),"backend":if self.direct{"direct"}else{"sdk"}}),
+            json!({"info":info(&self.serial),"serial":self.serial,"sdkVersion":version,
+            "controls":self.controls.values().collect::<Vec<_>>(),"backend":if self.direct{"direct"}else{"sdk"},
+            "captureModes":if self.direct {json!(["still","video"])} else {json!(["still"])},
+            "videoMaxExposureMicroseconds":if self.direct {json!(30_000_000)} else {Value::Null},
+            "videoFrameRecoveryAttempts":0,"videoFpsScope":"delivery","videoGeometry":"full-frame","videoScalarUpdates":false}),
         )
     }
     fn command(&mut self, method: &str, p: Value) -> Result<(Value, Vec<u8>)> {
+        if let Some(error) = &self.background_error {
+            ensure!(
+                matches!(method, "close" | "stop" | "diagnostics-dump"),
+                "QHY acquisition owner failed: {error}"
+            );
+        }
         let mut pixels = Vec::new();
         let value = match method {
             "wheel-status" => self.wheel_status()?,
             "wheel-move" => {
                 ensure!(
-                    self.exposure.is_none(),
+                    self.exposure.is_none() && self.video_params.is_none(),
                     invalid("Cannot move wheel during acquisition")
                 );
                 let status = self.wheel_status()?;
@@ -520,7 +537,8 @@ impl Host {
                     invalid("QHY control outside range")
                 );
                 ensure!(
-                    matches!(k, 16 | 17) || self.exposure.is_none(),
+                    matches!(k, 16 | 17)
+                        || (self.exposure.is_none() && self.video_params.is_none()),
                     invalid("Camera is exposing")
                 );
                 match k {
@@ -549,6 +567,49 @@ impl Host {
                 let e: Exposure = serde_json::from_value(p.clone())?;
                 regain_core::validate_exposure(&info(&self.serial), &self.controls, &e)?;
                 ensure!(e.bin == 1, invalid("Only bin1 is validated for QHY"));
+                let mode = p.get("mode").map_or(Some("still"), Value::as_str);
+                ensure!(
+                    matches!(mode, Some("still" | "video")),
+                    invalid("Unknown QHY capture mode")
+                );
+                let video = mode == Some("video");
+                let fps = p
+                    .get("maxFps")
+                    .map_or(Some(1.), Value::as_f64)
+                    .context("Invalid maxFps")?;
+                ensure!(
+                    fps.is_finite() && (0.01..=120.).contains(&fps),
+                    invalid("maxFps must be 0.01..120")
+                );
+                let gain = p
+                    .get("gain")
+                    .map_or(Some(self.values[&0]), Value::as_i64)
+                    .context("Invalid gain")?;
+                ensure!(
+                    (0..=200).contains(&gain),
+                    invalid("QHY gain outside 0..200")
+                );
+                if video {
+                    ensure!(
+                        self.direct,
+                        invalid("QHY video currently requires Direct USB")
+                    );
+                    ensure!(
+                        !e.dark
+                            && e.microseconds <= 30_000_000
+                            && e.width == 9600
+                            && e.height == 6422
+                            && e.x == 0
+                            && e.y == 0,
+                        invalid(
+                            "QHY video requires full-frame RAW16 bin1, light mode, at most 30 seconds"
+                        )
+                    );
+                    ensure!(
+                        p.get("readRetries").is_none_or(|v| v.as_u64() == Some(0)),
+                        invalid("Video cannot replay retained frames")
+                    );
+                }
                 if method == "start" {
                     if !p["wheelExpected"].is_null() {
                         let expected = &p["wheelExpected"];
@@ -570,6 +631,44 @@ impl Host {
                         self.exposure.is_none(),
                         invalid("Prior acquisition is still active")
                     );
+                    #[cfg(windows)]
+                    if video {
+                        let reuse = self
+                            .video_params
+                            .as_ref()
+                            .is_some_and(|(old, g)| old == &e && *g == gain);
+                        if !reuse {
+                            self.stop()?;
+                            // Arm cleanup before writes; a failed acknowledgement
+                            // does not prove the sensor remained idle.
+                            self.exposure = Some(e.clone());
+                            let Backend::Direct(c) =
+                                self.backend.as_mut().context("Camera not open")?
+                            else {
+                                unreachable!()
+                            };
+                            c.start_video(u32::try_from(e.microseconds)?)?;
+                            for (kind, value) in
+                                [(0, gain), (5, self.values[&5]), (6, self.values[&6])]
+                            {
+                                self.backend.as_ref().unwrap().set(kind, value)?;
+                            }
+                            self.values.insert(0, gain);
+                            self.video_params = Some((e.clone(), gain));
+                        }
+                        self.video_interval = if p["continuousDrain"] == true {
+                            Duration::ZERO
+                        } else {
+                            Duration::from_secs_f64(1. / fps)
+                        };
+                        self.exposure = Some(e);
+                        self.cancelled = false;
+                        self.ready = false;
+                        return Ok((Value::Null, pixels));
+                    }
+                    if self.video_params.is_some() {
+                        self.stop()?;
+                    }
                     if self.cancelled {
                         // Only an explicitly cancelled/failed acquisition needs
                         // reinitialization. Successful frames keep the SDK cadence.
@@ -587,6 +686,13 @@ impl Host {
                     }
                     // Arm cleanup before dispatch: a failed start acknowledgement
                     // does not prove that the sensor remained idle.
+                    if gain != self.values[&0] {
+                        self.backend
+                            .as_ref()
+                            .context("Camera not open")?
+                            .set(0, gain)?;
+                        self.values.insert(0, gain);
+                    }
                     self.exposure = Some(e.clone());
                     self.ready = false;
                     self.backend
@@ -604,6 +710,13 @@ impl Host {
                 } else {
                     self.tick()?;
                     self.ready = self.backend.as_ref().unwrap().ready()?;
+                    if self.video_params.is_some()
+                        && self
+                            .video_delivered
+                            .is_some_and(|at| at.elapsed() < self.video_interval)
+                    {
+                        self.ready = false;
+                    }
                     json!(if self.ready { 2 } else { 1 })
                 }
             }
@@ -625,7 +738,20 @@ impl Host {
                 )?;
                 self.exposure = None;
                 self.cancelled = false;
-                json!({"width":e.width,"height":e.height,"bytes":pixels.len(),"vendor":"qhy","hardwareReadMode":0})
+                let video = self.video_params.is_some();
+                if video {
+                    self.video_delivered = Some(Instant::now());
+                }
+                #[cfg(windows)]
+                let video_status = if let Some(Backend::Direct(c)) = &self.backend {
+                    c.video_status()
+                } else {
+                    Value::Null
+                };
+                #[cfg(not(windows))]
+                let video_status = Value::Null;
+                json!({"width":e.width,"height":e.height,"bytes":pixels.len(),"vendor":"qhy","hardwareReadMode":0,
+                    "mode":if video {"video"}else{"still"},"bitDepth":16,"video":video_status})
             }
             "stop" => {
                 self.stop()?;
@@ -672,26 +798,45 @@ pub fn run(direct: bool, args: Vec<String>) -> Result<()> {
         wheel_slots: None,
         wheel_expected: None,
         wheel_pending: None,
+        video_params: None,
+        video_interval: Duration::ZERO,
+        video_delivered: None,
+        background_error: None,
     };
-    regain_worker::camera::serve(
-        &mut h,
-        |h, m, p| {
+    let h = std::cell::RefCell::new(&mut h);
+    regain_core::continuous::serve_with_idle(
+        |m, p| {
+            let mut h = h.borrow_mut();
             let result = h.command(m, p);
             if let Err(error) = &result {
                 crate::diagnostics::dump(&format!("{m}: {error:#}"));
             }
             result
         },
-        |h| {
-            let result = h.tick();
-            if let Err(error) = &result {
-                crate::diagnostics::dump(&format!("Thermal owner: {error:#}"));
-            }
-            result
-        },
         |error| {
             json!({"sdkCode":if matches!(error.downcast_ref::<regain_core::Failure>(), Some(regain_core::Failure::Invalid(_))) { Some(8) } else { None },
             "controlUncertain":matches!(error.downcast_ref::<regain_core::Failure>(), Some(regain_core::Failure::UncertainControl{..}))})
+        },
+        || {
+            let mut h = h.borrow_mut();
+            if h.background_error.is_none() {
+                let result = (|| -> Result<()> {
+                    #[cfg(windows)]
+                    if let Some(Backend::Direct(c)) = h.backend.as_mut() {
+                        c.pump_video()?;
+                    }
+                    h.tick()
+                })();
+                if let Err(error) = result {
+                    crate::diagnostics::dump(&format!("QHY background owner: {error:#}"));
+                    h.background_error = Some(format!("{error:#}"));
+                }
+            }
+            if h.video_params.is_some() {
+                Duration::from_millis(1)
+            } else {
+                Duration::from_millis(100)
+            }
         },
     )
 }
