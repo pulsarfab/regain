@@ -131,7 +131,7 @@ internal static class Settings
         panel.Children.Add(new TextBlock { Text = "Direct USB driver (experimental)", TextWrapping = TextWrapping.Wrap });
         var direct = new CheckBox { IsChecked = remembered?.UseDirectDriver == true, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 2, 0, 8) };
         panel.Children.Add(direct);
-        panel.Children.Add(new TextBlock { Text = "Off: use the ZWO SDK.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) });
+        panel.Children.Add(new TextBlock { Text = "Off: use the camera vendor SDK.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) });
         panel.Children.Add(new TextBlock { Text = "Fall back to SDK", TextWrapping = TextWrapping.Wrap });
         var fallback = new CheckBox { IsChecked = remembered?.AllowSdkFallback == true, IsEnabled = direct.IsChecked == true,
             HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 2, 0, 8) };
@@ -212,10 +212,10 @@ internal static class Settings
             picker.IsEnabled = false;
             direct.IsEnabled = false;
             bool useDirect = direct.IsChecked == true;
-            cameraStatus.Text = "Looking for ZWO cameras...";
+            cameraStatus.Text = "Looking for supported cameras...";
             try
             {
-                // Discovery only queries properties; it never opens another driver's camera.
+                // Discovery is explicit and disconnected: vendor probes may open USB handles.
                 var found = await Task.Run(() => CameraProvider.DiscoverAsync(discoveryCancel.Token, useDirect));
                 if (discoveryCancel.IsCancellationRequested) return;
                 var chosen = picker.SelectedItem as CameraChoice;
@@ -245,11 +245,13 @@ internal static class Settings
                 var peripherals = peripheralRecovery();
                 if (picker.SelectedItem is not CameraChoice choice)
                     throw new InvalidOperationException("Choose a camera before saving.");
-                if (direct.IsChecked == true && choice.Camera.Name is not ("ZWO ASI585MM Pro" or "ZWO ASI676MC" or "ZWO ASI662MC" or "ZWO ASI2600MM Duo" or "ZWO ASI2600MM Pro" or "ZWO ASI220MM Mini" or "ZWO ASI6200MM Pro"))
+                if (direct.IsChecked == true && choice.Camera.Name is not ("ZWO ASI585MM Pro" or "ZWO ASI676MC" or "ZWO ASI662MC" or "ZWO ASI2600MM Duo" or "ZWO ASI2600MM Pro" or "ZWO ASI220MM Mini" or "ZWO ASI6200MM Pro" or "QHY600M"))
                     throw new InvalidOperationException("Direct capture is unavailable for this camera. Turn off Direct USB driver to use the SDK.");
                 string? selectedSerial = string.IsNullOrWhiteSpace(serial.Text) ? null : serial.Text.Trim().ToLowerInvariant();
-                if (selectedSerial is not null && (selectedSerial.Length != 16 || selectedSerial.Any(c => !Uri.IsHexDigit(c))))
-                    throw new InvalidOperationException("The SDK serial number must contain 16 hexadecimal characters, or be left blank.");
+                if (selectedSerial is not null && (choice.Camera.Name.StartsWith("QHY", StringComparison.Ordinal)
+                    ? selectedSerial.Length > 128 || !selectedSerial.StartsWith("qhy600m-", StringComparison.Ordinal) || selectedSerial.Any(c => !char.IsAsciiLetterOrDigit(c) && c != '-')
+                    : selectedSerial.Length != 16 || selectedSerial.Any(c => !Uri.IsHexDigit(c))))
+                    throw new InvalidOperationException("Enter the complete QHY camera ID or the 16-digit ZWO serial; leave blank when only one matching camera is attached.");
                 static int? OptionalByte(TextBox field) {
                     if (!field.IsEnabled || string.IsNullOrWhiteSpace(field.Text)) return null;
                     if (!int.TryParse(field.Text,out int value) || value is <0 or >255)

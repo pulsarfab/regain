@@ -19,10 +19,10 @@ using Regain.Core;
 [assembly: AssemblyMetadata("Repository", "https://github.com/pulsarfab/regain")]
 [assembly: AssemblyMetadata("Homepage", "https://github.com/pulsarfab/regain")]
 [assembly: AssemblyMetadata("ChangelogURL", "https://github.com/pulsarfab/regain/releases")]
-[assembly: AssemblyMetadata("Tags", "camera,rotator,filterwheel,focuser,ZWO,Pegasus,FocusCube3,recovery")]
+[assembly: AssemblyMetadata("Tags", "camera,rotator,filterwheel,focuser,ZWO,QHY,Pegasus,FocusCube3,recovery")]
 [assembly: AssemblyMetadata("FeaturedImageURL", "pack://application:,,,/Regain.NINA;component/Assets/regain.png")]
 [assembly: AssemblyMetadata("ShortDescription", "Regain control of your equipment.")]
-[assembly: AssemblyMetadata("LongDescription", "PulsarFab regain brings resilient camera capture and native equipment control to NINA. Connect ZWO cameras, CAA rotators, EFW filter wheels, EAF and Pegasus FocusCube3 focusers with Rust drivers and matching setup dialogs.")]
+[assembly: AssemblyMetadata("LongDescription", "PulsarFab regain brings resilient camera capture and native equipment control to NINA. Connect ZWO and QHY cameras, USB and camera-connected QHY filter wheels, CAA rotators, EFW filter wheels, EAF and Pegasus FocusCube3 focusers with Rust drivers and matching setup dialogs.")]
 
 namespace Regain.NINA;
 

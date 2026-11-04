@@ -4,8 +4,8 @@ using System.Text.Json.Nodes;
 
 string root = Environment.GetEnvironmentVariable("REGAIN_OPTICAL_FIXTURE_DIRECTORY") ?? Path.Combine(AppContext.BaseDirectory, "state");
 Directory.CreateDirectory(root);
-string kind = args.Contains("caa") ? "caa" : "efw";
-string serial = kind == "caa" ? "0102030405060708" : "0102030405060709";
+string kind = args.Contains("caa") ? "caa" : args.Contains("cfw") ? "cfw" : "efw";
+string serial = kind == "caa" ? "0102030405060708" : kind == "cfw" ? "COM3" : "0102030405060709";
 string statePath = Path.Combine(root, kind + "-state.json");
 JsonObject Initial() => kind == "caa"
     ? new() { ["mechanical_degrees"] = 30.0, ["logical_degrees"] = 30.0, ["logical_offset"] = 0.0, ["target_degrees"] = 30.0, ["moving"] = false, ["limit_degrees"] = 360, ["error"] = 0 }

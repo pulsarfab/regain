@@ -3,8 +3,9 @@ using System.Text.Json;
 
 namespace Regain.Ascom;
 
-/// One private Rust camera process owned by this COM object. No network transport.
-internal sealed class LocalCamera : IDisposable
+/// One Rust camera process shared by the paired camera and wheel COM clients.
+/// Communication uses a local pipe with no network transport.
+internal sealed class CameraPipe : IDisposable
 {
     private readonly object gate = new();
     private readonly int slot;
@@ -13,14 +14,14 @@ internal sealed class LocalCamera : IDisposable
     private bool faulted;
     private int transaction;
     private bool disposed;
-    internal LocalCamera(int slot) { this.slot = slot; }
+    internal CameraPipe(int slot) { this.slot = slot; }
     internal static string WorkerExecutable => Regain.Rotator.RegainPaths.EnvironmentVariable("REGAIN_CAMERA_WORKER") ??
-        Path.Combine(Path.GetDirectoryName(typeof(LocalCamera).Assembly.Location)!, "regain-camera.exe");
+        Path.Combine(Path.GetDirectoryName(typeof(CameraPipe).Assembly.Location)!, "regain-camera.exe");
     internal static bool Simulated => Regain.Rotator.RegainPaths.EnvironmentVariable("REGAIN_ASCOM_SIMULATE") == "1";
     private void Start()
     {
         if (faulted) throw new ASCOM.DriverException("Camera worker failed. Disconnect and reconnect the camera.");
-        if (disposed) throw new ObjectDisposedException(nameof(LocalCamera));
+        if (disposed) throw new ObjectDisposedException(nameof(CameraPipe));
         if (worker is not null) {
             if (worker.HasExited) throw new ASCOM.DriverException("Camera worker exited. Disconnect and reconnect the camera.");
             return;
@@ -37,12 +38,12 @@ internal sealed class LocalCamera : IDisposable
         try { worker.Start(); job = ProcessJob.Attach(worker); worker.BeginErrorReadLine(); }
         catch { Close(); throw; }
     }
-    internal JsonElement Request(string method, string member = "", object? parameters = null) => Exchange(method, member, parameters).value;
-    private (JsonElement value, byte[] pixels) Exchange(string method, string member, object? parameters)
+    internal JsonElement Request(int clientID, string method, string member = "", object? parameters = null) => Exchange(clientID, method, member, parameters).value;
+    private (JsonElement value, byte[] pixels) Exchange(int clientID, string method, string member, object? parameters)
     {
         lock (gate) {
             Start(); int id = ++transaction;
-            byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(new { version = 1, id, method, member, @params = parameters });
+            byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(new { version = 1, id, clientID, method, member, @params = parameters });
             try {
                 var work = Task.Run(async () => {
                     var input = worker!.StandardInput.BaseStream; var output = worker.StandardOutput.BaseStream;
@@ -83,13 +84,8 @@ internal sealed class LocalCamera : IDisposable
             } catch (Exception e) when (e is IOException or TimeoutException) { faulted = true; Close(); throw new ASCOM.DriverException(e.Message, e); }
         }
     }
-    internal T Get<T>(string member) => JsonSerializer.Deserialize<T>(Request("get", member).GetRawText())!;
-    internal void Put(string member, object? value = null) {
-        if (value is double d && (double.IsNaN(d) || double.IsInfinity(d))) throw new ASCOM.InvalidValueException(member + " must be finite");
-        Request("put", member, value is null ? null : new Dictionary<string, object> { [member] = value });
-    }
-    internal object Image(bool variant) {
-        var (value, bytes) = Exchange("get", "imagearray", null);
+    internal object Image(int clientID, bool variant) {
+        var (value, bytes) = Exchange(clientID, "get", "imagearray", null);
         int w = value.GetProperty("width").GetInt32(), h = value.GetProperty("height").GetInt32();
         if (w <= 0 || h <= 0 || (long)w * h * 2 != bytes.Length) throw new ASCOM.DriverException("Invalid image dimensions");
         if (variant) {
@@ -105,4 +101,45 @@ internal sealed class LocalCamera : IDisposable
         finally { job?.Dispose(); job = null; worker.Dispose(); worker = null; }
     }
     public void Dispose() { lock (gate) { if (disposed) return; disposed = true; Close(); } }
+}
+
+/// Per-client lease on one private camera owner per configured ASCOM slot in this
+/// process. Camera and 4-pin wheel never compete for the physical camera handle.
+internal sealed class LocalCamera : IDisposable
+{
+    private sealed class Shared(int slot) { internal readonly CameraPipe Pipe = new(slot); internal int References; }
+    private static readonly object PoolGate = new();
+    private static readonly Dictionary<int, Shared> Pool = new();
+    private static int nextClient;
+    private readonly int slot, clientID;
+    private readonly bool wheel;
+    private Shared? owner;
+    private bool used;
+    internal LocalCamera(int slot, bool wheel = false) {
+        this.slot = slot; this.wheel = wheel;
+        lock (PoolGate) {
+            if (!Pool.TryGetValue(slot, out owner)) Pool.Add(slot, owner = new Shared(slot));
+            owner.References++; clientID = checked(++nextClient);
+        }
+    }
+    internal static string WorkerExecutable => CameraPipe.WorkerExecutable;
+    internal static bool Simulated => CameraPipe.Simulated;
+    internal JsonElement Request(string method, string member = "", object? parameters = null) {
+        var shared = owner ?? throw new ObjectDisposedException(nameof(LocalCamera));
+        used = true;
+        return shared.Pipe.Request(clientID, wheel && (method == "get" || method == "put") ? "wheel-" + method : method, member, parameters);
+    }
+    internal T Get<T>(string member) => JsonSerializer.Deserialize<T>(Request("get", member).GetRawText())!;
+    internal void Put(string member, object? value = null) {
+        if (value is double d && (double.IsNaN(d) || double.IsInfinity(d))) throw new ASCOM.InvalidValueException(member + " must be finite");
+        Request("put", member, value is null ? null : new Dictionary<string, object> { [member] = value });
+    }
+    internal object Image(bool variant) => (owner ?? throw new ObjectDisposedException(nameof(LocalCamera))).Pipe.Image(clientID, variant);
+    public void Dispose() {
+        lock (PoolGate) {
+            if (owner is null) return;
+            try { if (used) Request("put", "connected", new { Connected = false }); }
+            finally { var old = owner; owner = null; if (--old.References == 0) { Pool.Remove(slot); old.Pipe.Dispose(); } }
+        }
+    }
 }

@@ -33,6 +33,7 @@ pub struct Server {
     pub runtime: Runtime,
     rotators: Mutex<HashMap<usize, Arc<crate::rotator::Rotator>>>,
     pub filterwheel: crate::accessory::Accessory,
+    pub qhy_wheel: crate::accessory::Accessory,
     focusers: Mutex<HashMap<usize, Arc<crate::accessory::Accessory>>>,
     pub flatpanel: crate::flatpanel::FlatPanel,
     pub log: Arc<Log>,
@@ -123,6 +124,14 @@ impl Server {
             hub,
             flatpanel: crate::flatpanel::FlatPanel::new(
                 profiles.accessory_path("ofp2"),
+                runtime.directory.clone(),
+                runtime.simulate,
+            ),
+            qhy_wheel: crate::accessory::Accessory::new(
+                "cfw",
+                1,
+                None,
+                profiles.accessory_path("cfw"),
                 runtime.directory.clone(),
                 runtime.simulate,
             ),
@@ -287,6 +296,7 @@ impl Server {
             rotator.shutdown().await;
         }
         self.filterwheel.shutdown().await;
+        self.qhy_wheel.shutdown().await;
         let focusers: Vec<_> = self.focusers.lock().unwrap().values().cloned().collect();
         for focuser in focusers {
             focuser.shutdown().await;
@@ -320,7 +330,13 @@ impl Server {
                     self.profiles.rotators.get(device.number as usize).is_some()
                 }
                 regain_hub::config::DeviceType::FilterWheel => {
-                    device.number == 0 && self.filterwheel.configured().await?.is_some()
+                    (device.number == 0 && self.filterwheel.configured().await?.is_some())
+                        || (device.number == 1 && self.qhy_wheel.configured().await?.is_some())
+                        || (device.number > 1
+                            && self
+                                .profiles
+                                .get(device.number as usize - 2)
+                                .is_ok_and(|p| p.filter_wheel.enabled))
                 }
                 regain_hub::config::DeviceType::CoverCalibrator => {
                     device.number == 0 && self.flatpanel.configured().await?.is_some()
@@ -563,6 +579,15 @@ async fn management(
         }
         "configureddevices" => {
             let mut devices = s.profiles.all().into_iter().enumerate().filter(|(_,p)|p.camera.is_some()).map(|(slot,p)|json!({"DeviceName":p.camera_name(),"DeviceType":"Camera","DeviceNumber":slot,"UniqueID":p.unique_id})).collect::<Vec<_>>();
+            for (slot, p) in s
+                .profiles
+                .all()
+                .iter()
+                .enumerate()
+                .filter(|(_, p)| p.filter_wheel.enabled)
+            {
+                devices.push(json!({"DeviceName":format!("QHY camera filter wheel  -  {}",p.camera_name()),"DeviceType":"FilterWheel","DeviceNumber":slot+2,"UniqueID":format!("{}-cfw",p.unique_id)}));
+            }
             for slot in s.profiles.rotators.all() {
                 match match s.rotator(slot.number) {
                     Ok(r) => r.configured().await,
@@ -573,7 +598,10 @@ async fn management(
                     Err(e) => return Json(failure(e, id, s.next())).into_response(),
                 };
             }
-            let mut accessories = vec![s.filterwheel.configured().await];
+            let mut accessories = vec![
+                s.filterwheel.configured().await,
+                s.qhy_wheel.configured().await,
+            ];
             for slot in s.profiles.focusers.all() {
                 accessories.push(match s.focuser(slot.number) {
                     Ok(f) => f.configured().await,
@@ -1214,7 +1242,15 @@ async fn filterwheel_page(State(s): State<Arc<Server>>, Path(slot): Path<usize>)
     {
         return page;
     }
-    if slot != 0 {
+    if slot > 1
+        && s.profiles
+            .get(slot - 2)
+            .is_ok_and(|p| p.filter_wheel.enabled)
+    {
+        return axum::response::Redirect::to(&format!("/setup/v1/camera/{}/setup", slot - 2))
+            .into_response();
+    }
+    if slot > 1 {
         return StatusCode::NOT_FOUND.into_response();
     }
     accessory_page().await.into_response()
@@ -1301,7 +1337,30 @@ async fn accessory_request(
         };
         return hub_request(s, kind, slot, member, put, params).await;
     }
+    if kind == "filterwheel"
+        && slot > 1
+        && s.profiles
+            .get(slot - 2)
+            .is_ok_and(|p| p.filter_wheel.enabled)
+    {
+        let mut id = 0;
+        let result = async {
+            let p = params?;
+            id = p.optional_id("ClientTransactionID")?;
+            let client = p.optional_id("ClientID")?;
+            s.device(slot - 2)?
+                .wheel_request(&member, put, &p, client)
+                .await
+        }
+        .await;
+        return Json(match result {
+            Ok(value) => envelope(value, id, s.next()),
+            Err(e) => failure(e, id, s.next()),
+        })
+        .into_response();
+    }
     if !((slot == 0 && kind != "focuser")
+        || (slot == 1 && kind == "filterwheel")
         || (kind == "focuser" && s.profiles.focusers.get(slot).is_some()))
         || member != member.to_lowercase()
         || !["filterwheel", "focuser", "covercalibrator"].contains(&kind.as_str())
@@ -1335,7 +1394,11 @@ async fn accessory_request(
             }
             target.request(&member, put, &p).await
         } else {
-            s.filterwheel.request(&member, put, &p).await
+            if slot == 1 {
+                s.qhy_wheel.request(&member, put, &p).await
+            } else {
+                s.filterwheel.request(&member, put, &p).await
+            }
         }
     }
     .await;
@@ -1346,10 +1409,14 @@ async fn accessory_request(
     .into_response()
 }
 async fn accessory_setup(State(s): State<Arc<Server>>, Path(kind): Path<String>) -> Response {
-    if !["efw", "filterwheel"].contains(&kind.as_str()) {
+    if !["efw", "filterwheel", "cfw"].contains(&kind.as_str()) {
         return StatusCode::NOT_FOUND.into_response();
     }
-    setup_result(s.filterwheel.setup().await)
+    setup_result(if kind == "cfw" {
+        s.qhy_wheel.setup().await
+    } else {
+        s.filterwheel.setup().await
+    })
 }
 async fn flatpanel_setup(State(s): State<Arc<Server>>) -> Response {
     setup_result(s.flatpanel.setup().await)
@@ -1379,10 +1446,14 @@ async fn accessory_configure(
     if !setup_allowed(&headers) {
         return StatusCode::FORBIDDEN.into_response();
     }
-    if !["efw", "filterwheel"].contains(&kind.as_str()) {
+    if !["efw", "filterwheel", "cfw"].contains(&kind.as_str()) {
         return StatusCode::NOT_FOUND.into_response();
     }
-    setup_result(s.filterwheel.configure(value).await)
+    setup_result(if kind == "cfw" {
+        s.qhy_wheel.configure(value).await
+    } else {
+        s.filterwheel.configure(value).await
+    })
 }
 async fn accessory_discover(
     State(s): State<Arc<Server>>,
@@ -1392,10 +1463,14 @@ async fn accessory_discover(
     if !setup_allowed(&headers) {
         return StatusCode::FORBIDDEN.into_response();
     }
-    if !["efw", "filterwheel"].contains(&kind.as_str()) {
+    if !["efw", "filterwheel", "cfw"].contains(&kind.as_str()) {
         return StatusCode::NOT_FOUND.into_response();
     }
-    setup_result(s.filterwheel.discover().await)
+    setup_result(if kind == "cfw" {
+        s.qhy_wheel.discover().await
+    } else {
+        s.filterwheel.discover().await
+    })
 }
 async fn accessory_settings(
     State(s): State<Arc<Server>>,
@@ -1406,10 +1481,14 @@ async fn accessory_settings(
     if !setup_allowed(&headers) {
         return StatusCode::FORBIDDEN.into_response();
     }
-    if !["efw", "filterwheel"].contains(&kind.as_str()) {
+    if !["efw", "filterwheel", "cfw"].contains(&kind.as_str()) {
         return StatusCode::NOT_FOUND.into_response();
     }
-    setup_result(s.filterwheel.settings(value).await)
+    setup_result(if kind == "cfw" {
+        s.qhy_wheel.settings(value).await
+    } else {
+        s.filterwheel.settings(value).await
+    })
 }
 
 async fn focuser_page(State(s): State<Arc<Server>>, Path(slot): Path<usize>) -> Response {
@@ -1815,5 +1894,51 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+    #[tokio::test]
+    async fn usb_wheel_and_camera_bridge_have_distinct_discovery_and_routes() {
+        let profiles = Arc::new(Profiles::new(None).unwrap());
+        let mut camera = profiles.get(0).unwrap();
+        camera.camera = Some(json!({"name":"QHY600M","width":9600,"height":6422,"bins":[1]}));
+        camera.filter_wheel.enabled = true;
+        profiles.save(0, camera).unwrap();
+        let server = Server::new(profiles, runtime(), Log::new(None));
+        let mut profile = server.qhy_wheel.setup().await.unwrap()["profile"].clone();
+        profile["serial"] = json!("COM3");
+        server.qhy_wheel.configure(profile.clone()).await.unwrap();
+        profile["unidirectional"] = json!(true);
+        assert!(server.qhy_wheel.configure(profile).await.is_err());
+        let router = server.router();
+        let (_, discovered) = request(&router, "GET", "/management/v1/configureddevices", "").await;
+        let wheels: Vec<_> = discovered["Value"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|d| d["DeviceType"] == "FilterWheel")
+            .collect();
+        assert_eq!(wheels.len(), 2);
+        assert!(wheels.iter().any(|d| d["DeviceNumber"] == 1));
+        assert!(wheels.iter().any(|d| d["DeviceNumber"] == 2));
+        let (_, usb) = request(&router, "GET", "/api/v1/filterwheel/1/name", "").await;
+        assert_eq!(usb["Value"], "PulsarFab regain QHY Filter Wheel (USB)");
+        let (_, bridge) = request(&router, "GET", "/api/v1/filterwheel/2/description", "").await;
+        assert!(bridge["Value"].as_str().unwrap().contains("4-pin"));
+        let (_, actions) =
+            request(&router, "GET", "/api/v1/filterwheel/1/supportedactions", "").await;
+        assert!(
+            !actions["Value"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("Regain.Calibrate"))
+        );
+        let (_, position) = request(
+            &router,
+            "GET",
+            "/api/v1/filterwheel/1/position?ClientID=9",
+            "",
+        )
+        .await;
+        assert_eq!(position["ErrorNumber"], 0x407);
+        server.shutdown().await;
     }
 }

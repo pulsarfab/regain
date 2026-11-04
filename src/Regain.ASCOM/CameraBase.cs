@@ -18,7 +18,7 @@ public abstract partial class CameraBase : ICameraV4, IDisposable
     // NINA records the connected ASCOM Name as FITS INSTRUME. Keep the
     // registration/chooser label separate from the selected camera model.
     public string Name => client?.Get<string>("name") ?? $"PulsarFab regain Retryable Camera {slot + 1}";
-    public string Description => "ZWO camera driver with automatic retries";
+    public string Description => "Camera driver with automatic retries";
     public string DriverInfo => client?.Get<string>("driverinfo") ??
         "PulsarFab regain native Rust camera driver; state: Disconnected; retries: 0 (recaptures: 0, downloads: 0, USB reads: 0); last failure: none";
     public string DriverVersion => typeof(CameraBase).Assembly.GetName().Version.ToString();

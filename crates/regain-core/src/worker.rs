@@ -62,23 +62,25 @@ impl Runtime {
         Ok(String::from_utf8(output.stdout)?.trim().to_owned())
     }
     pub async fn spawn(&self, direct: bool, log: Diagnostic) -> Result<Worker> {
-        self.spawn_configured(direct, log, None).await
+        self.spawn_configured(direct, "zwo", log, None).await
     }
     /// Configure diagnostics before the SDK is loaded in the isolated worker.
     /// An explicit environment off switch remains a host-wide override.
     pub(crate) async fn spawn_configured(
         &self,
         direct: bool,
+        vendor: &str,
         log: Diagnostic,
         recovery: Option<&crate::RecoveryOptions>,
     ) -> Result<Worker> {
+        ensure!(matches!(vendor, "zwo" | "qhy"), "Unsupported camera vendor");
         let path = self
             .directory
             .join(format!("regain-device{}", std::env::consts::EXE_SUFFIX));
         let mut command = Command::new(&path);
         command
             .args([
-                "zwo",
+                vendor,
                 if direct {
                     "camera-direct"
                 } else {
@@ -103,7 +105,7 @@ impl Runtime {
         }
         if self.simulate {
             command.arg("--simulate");
-        } else if !direct {
+        } else if !direct && vendor == "zwo" {
             command.arg("--sdk").arg(&self.sdk);
         }
         let mut child = command
@@ -162,7 +164,55 @@ impl Runtime {
         log: Diagnostic,
         token: &CancellationToken,
     ) -> Result<Value> {
-        let mut worker = self.spawn(direct, log).await?;
+        let zwo = self.list_vendor("zwo", direct, log.clone(), token).await;
+        #[cfg(windows)]
+        let mut qhy = Value::Array(Vec::new());
+        #[cfg(not(windows))]
+        let qhy = Value::Array(Vec::new());
+        #[cfg(windows)]
+        if !self.simulate
+            && !regain_transport::cypress::enumerate(
+                0xae18aa60_7f6a_11d4_97dd_00010229b959,
+                0x1618,
+                0xc601,
+            )?
+            .is_empty()
+        {
+            match self.list_vendor("qhy", direct, log.clone(), token).await {
+                Ok(found) => qhy = found,
+                Err(error) => log(
+                    "warning",
+                    "qhy.discovery",
+                    &format!("QHY discovery failed: {error:#}"),
+                ),
+            }
+        }
+        let mut values = match zwo {
+            Ok(values) => values,
+            Err(error) if qhy.as_array().is_some_and(|c| !c.is_empty()) => {
+                log(
+                    "warning",
+                    "zwo.discovery",
+                    &format!("ZWO discovery unavailable: {error:#}"),
+                );
+                Value::Array(Vec::new())
+            }
+            Err(error) => return Err(error),
+        };
+        values
+            .as_array_mut()
+            .context("Invalid camera list")?
+            .extend(qhy.as_array().context("Invalid QHY list")?.iter().cloned());
+        Ok(values)
+    }
+    pub async fn list_vendor(
+        &self,
+        vendor: &str,
+        direct: bool,
+        log: Diagnostic,
+        token: &CancellationToken,
+    ) -> Result<Value> {
+        let mut worker = self.spawn_configured(direct, vendor, log, None).await?;
         let result = worker
             .call("list", Value::Null, 20., token)
             .await

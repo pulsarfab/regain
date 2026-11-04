@@ -28,6 +28,47 @@ public sealed class CameraSession : IDisposable
     private double? recoveryTemperature;
     private long? recoveryPower;
     private long? recoveryTarget;
+    private int captureRequests;
+    private CameraFilterWheelState? wheelState;
+    private object? wheelExpected;
+    public async Task<CameraFilterWheelState> FilterWheelStatusAsync(CancellationToken token = default)
+    {
+        if (!await operation.WaitAsync(0, token).ConfigureAwait(false)) {
+            lock (sync) return ControlConnectionAvailable && wheelState is { } cached
+                ? cached : throw new InvalidOperationException("Wheel position unavailable while camera is busy");
+        }
+        try {
+            if (!Camera.Name.StartsWith("QHY", StringComparison.Ordinal)) throw new NotSupportedException("The camera bridge requires a QHY camera");
+            var state = CameraFilterWheelState.Parse((await Call("wheel-status", null, token).ConfigureAwait(false)).Result);
+            if (state.ParentSerial != Serial) throw new InvalidDataException("Wheel parent camera identity changed");
+            lock (sync) { wheelState = state; wheelExpected = new { slots = state.Slots, position = state.ExpectedPosition }; }
+            return state;
+        } finally { operation.Release(); }
+    }
+    public async Task MoveFilterWheelAsync(int position, CancellationToken token = default)
+    {
+        if (Volatile.Read(ref captureRequests) != 0) throw new InvalidOperationException("Cannot move the filter wheel during an exposure");
+        await operation.WaitAsync(token).ConfigureAwait(false);
+        try {
+            if (Volatile.Read(ref captureRequests) != 0) throw new InvalidOperationException("Cannot move the filter wheel during an exposure");
+            var state = CameraFilterWheelState.Parse((await Call("wheel-status", null, token).ConfigureAwait(false)).Result);
+            if (state.ParentSerial != Serial) throw new InvalidDataException("Wheel parent camera identity changed");
+            if (position < 0 || position >= state.Slots) throw new ArgumentOutOfRangeException(nameof(position));
+            if (state.Moving) throw new InvalidOperationException("Filter wheel is already moving");
+            // Record intent before dispatch. A lost acknowledgement must never cause
+            // a move replay or allow a replacement exposure through the wrong filter.
+            lock (sync) { wheelExpected = new { slots = state.Slots, position }; wheelState = state with { Position = -1, ExpectedPosition = position, Moving = true, Verified = false }; }
+            await Call("wheel-move", new { position }, token).ConfigureAwait(false);
+        } finally { operation.Release(); }
+    }
+    public async Task DisableThermalOutputsAsync()
+    {
+        await operation.WaitAsync().ConfigureAwait(false);
+        try {
+            foreach (int kind in new[] { 17, 21 }) if (Controls.TryGetValue(kind, out var cap) && cap.Writable) Set(kind, 0);
+            await Apply(Snapshot(), CancellationToken.None).ConfigureAwait(false);
+        } finally { operation.Release(); }
+    }
     public bool ControlConnectionAvailable { get; private set; }
     public CameraDescriptor Camera
     {
@@ -190,6 +231,7 @@ public sealed class CameraSession : IDisposable
             waitForUsbPeripherals = RecoverUsbPeripherals is not null,
             recovery = JsonSerializer.SerializeToElement(Options, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
             allowSdkFallback = sdkFallbackFactory is not null,
+            wheelExpected,
             recoveryState = new { temperature = recoveryTemperature, power = recoveryPower, target = recoveryTarget, settle = requiresCoolingSettle }
         }, token, Options.CommandTimeoutSeconds + (Options.UsbResetAfterFailures > 0 ? 60 : 0)).ConfigureAwait(false)).Result;
         var identity = result.GetProperty("serial");
@@ -442,6 +484,12 @@ public sealed class CameraSession : IDisposable
         return power;
     }
     public async Task<Frame> CaptureAsync(Exposure exposure, CancellationToken token)
+    {
+        Interlocked.Increment(ref captureRequests);
+        try { return await CaptureCoreAsync(exposure, token).ConfigureAwait(false); }
+        finally { Interlocked.Decrement(ref captureRequests); }
+    }
+    private async Task<Frame> CaptureCoreAsync(Exposure exposure, CancellationToken token)
     {
         await operation.WaitAsync(token).ConfigureAwait(false);
         try

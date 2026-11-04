@@ -38,11 +38,12 @@ pub struct Device {
 }
 struct State {
     runtime_options: Option<regain_core::camera_options::CameraRuntimeHandle>,
-    clients: HashSet<u32>,
+    clients: HashSet<(bool, u32)>,
     status: Option<SharedStatus>,
     changing: bool,
     connection_error: Option<String>,
     busy: bool,
+    wheel_busy: bool,
     frame: Option<Arc<Frame>>,
     error: Option<String>,
     cancel: CancellationToken,
@@ -64,6 +65,7 @@ impl Default for State {
             changing: false,
             connection_error: None,
             busy: false,
+            wheel_busy: false,
             frame: None,
             error: None,
             cancel: CancellationToken::new(),
@@ -76,6 +78,12 @@ impl Default for State {
             duration: 0.,
             closed: false,
         }
+    }
+}
+struct WheelCommand<'a>(&'a Device);
+impl Drop for WheelCommand<'_> {
+    fn drop(&mut self) {
+        self.0.state.lock().unwrap().wheel_busy = false;
     }
 }
 impl Device {
@@ -145,6 +153,15 @@ impl Device {
         on: bool,
         asynchronous: bool,
     ) -> Result<()> {
+        self.connected_role(client, on, asynchronous, false).await
+    }
+    async fn connected_role(
+        self: &Arc<Self>,
+        client: u32,
+        on: bool,
+        asynchronous: bool,
+        wheel: bool,
+    ) -> Result<()> {
         {
             let mut s = self.state.lock().unwrap();
             ensure!(
@@ -156,7 +173,7 @@ impl Device {
         }
         let owner = self.clone();
         let task = tokio::spawn(async move {
-            let result = owner.change(client, on).await;
+            let result = owner.change(client, on, wheel).await;
             {
                 let mut s = owner.state.lock().unwrap();
                 s.changing = false;
@@ -166,18 +183,29 @@ impl Device {
         });
         if asynchronous { Ok(()) } else { task.await? }
     }
-    async fn change(self: &Arc<Self>, client: u32, on: bool) -> Result<()> {
+    async fn change(self: &Arc<Self>, client: u32, on: bool, wheel: bool) -> Result<()> {
         let _gate = self.connection.lock().await;
         if !on {
             {
                 let mut s = self.state.lock().unwrap();
-                s.clients.remove(&client);
-                if !s.clients.is_empty() {
+                if !s.clients.remove(&(wheel, client)) {
+                    return Ok(());
+                }
+                if !s.clients.is_empty() && (wheel || s.clients.iter().any(|(w, _)| !w)) {
                     return Ok(());
                 }
                 s.cancel.cancel();
             }
             let mut engine = self.engine.lock().await;
+            if !self.state.lock().unwrap().clients.is_empty() {
+                // Last camera client left; the wheel keeps the transport alive.
+                if let Some(session) = engine.as_mut() {
+                    session
+                        .disable_thermal_outputs(&CancellationToken::new())
+                        .await?;
+                }
+                return Ok(());
+            }
             if let Some(mut session) = engine.take() {
                 session.close().await;
             }
@@ -188,10 +216,33 @@ impl Device {
             s.busy = false;
             return Ok(());
         }
+        if wheel && self.snapshot().is_some() {
+            self.engine
+                .lock()
+                .await
+                .as_mut()
+                .ok_or_else(|| error(0x407, "Camera unavailable"))?
+                .filter_wheel_status(&CancellationToken::new())
+                .await?;
+        }
+        let first_camera = {
+            let s = self.state.lock().unwrap();
+            !wheel && s.status.is_some() && !s.clients.iter().any(|(w, _)| !w)
+        };
+        if first_camera {
+            let mut engine = self.engine.lock().await;
+            let session = engine
+                .as_mut()
+                .ok_or_else(|| error(0x407, "Camera unavailable"))?;
+            for (k, v) in &self.profiles.get(self.slot)?.controls {
+                Session::queue_control(&session.status, *k, *v)?;
+            }
+            session.refresh(&CancellationToken::new()).await?;
+        }
         {
             let mut s = self.state.lock().unwrap();
             if s.status.is_some() {
-                s.clients.insert(client);
+                s.clients.insert((wheel, client));
                 return Ok(());
             }
         }
@@ -211,7 +262,13 @@ impl Device {
         let token = CancellationToken::new();
         let result = async {
             session.connect(&token).await?;
+            if wheel || p.filter_wheel.enabled {
+                session.filter_wheel_status(&token).await?;
+            }
             for (k, v) in &p.controls {
+                if wheel && matches!(k, 16 | 17 | 21) {
+                    continue;
+                }
                 Session::queue_control(&session.status, *k, *v)?;
             }
             session.refresh(&token).await?;
@@ -227,7 +284,7 @@ impl Device {
             let mut s = self.state.lock().unwrap();
             s.status = Some(session.status.clone());
             s.runtime_options = Some(session.runtime_options());
-            s.clients.insert(client);
+            s.clients.insert((wheel, client));
             s.error = None;
             s.frame = None;
             s.bin = 1;
@@ -245,6 +302,188 @@ impl Device {
         *self.engine.lock().await = Some(session);
         Ok(())
     }
+    fn reserve_wheel(&self, client: u32) -> Result<WheelCommand<'_>> {
+        let mut s = self.state.lock().unwrap();
+        ensure!(
+            s.clients.contains(&(true, client)),
+            Error(0x407, "Wheel client is not connected".into())
+        );
+        ensure!(
+            !s.busy && !s.wheel_busy && !s.changing,
+            Error(
+                0x40B,
+                "Cannot move the filter wheel while camera or wheel is busy".into()
+            )
+        );
+        s.wheel_busy = true;
+        Ok(WheelCommand(self))
+    }
+    fn cached_wheel(&self) -> Result<Value> {
+        let s = self.state.lock().unwrap();
+        let state = s
+            .status
+            .as_ref()
+            .ok_or_else(|| error(0x407, "Camera unavailable"))?
+            .lock()
+            .unwrap();
+        ensure!(
+            state.control_connection_available && !state.filter_wheel.is_null(),
+            Error(
+                0x40B,
+                "Wheel position unavailable during camera recovery".into()
+            )
+        );
+        let mut wheel = state.filter_wheel.clone();
+        if s.wheel_busy {
+            wheel["moving"] = json!(true);
+            wheel["verified"] = json!(false);
+            wheel["position"] = json!(-1);
+        }
+        Ok(wheel)
+    }
+    pub async fn wheel_request(
+        self: &Arc<Self>,
+        member: &str,
+        put: bool,
+        p: &Params,
+        client: u32,
+    ) -> Result<Value> {
+        if put && matches!(member, "connected" | "connect" | "disconnect") {
+            let on = if member == "connected" {
+                p.boolean("Connected")?
+            } else {
+                member == "connect"
+            };
+            self.connected_role(client, on, member != "connected", true)
+                .await?;
+            return Ok(Value::Null);
+        }
+        if !put {
+            match member {
+                "name" => {
+                    return Ok(json!(format!(
+                        "QHY camera filter wheel  -  {}",
+                        self.profiles.get(self.slot)?.camera_name()
+                    )));
+                }
+                "description" => {
+                    return Ok(json!(
+                        "QHY 4-pin filter wheel sharing the Regain camera connection"
+                    ));
+                }
+                "driverinfo" => {
+                    return Ok(json!(
+                        "PulsarFab regain QHY camera bridge; positions verified before and after capture"
+                    ));
+                }
+                "driverversion" => return Ok(json!(env!("CARGO_PKG_VERSION"))),
+                "interfaceversion" => return Ok(json!(3)),
+                "supportedactions" => return Ok(json!(["Regain.Diagnostics"])),
+                "connected" => {
+                    return Ok(json!(
+                        self.state.lock().unwrap().clients.contains(&(true, client))
+                    ));
+                }
+                "connecting" => return self.get("connecting", client),
+                _ => (),
+            }
+        }
+        let busy = {
+            let s = self.state.lock().unwrap();
+            ensure!(
+                s.clients.contains(&(true, client)),
+                Error(0x407, "Wheel client is not connected".into())
+            );
+            s.busy
+        };
+        if put && member != "position" {
+            if member == "action"
+                && p.string("Action")?
+                    .eq_ignore_ascii_case("Regain.Diagnostics")
+            {
+                return Ok(json!(serde_json::to_string(
+                    &self.snapshot().map(|s| s.filter_wheel)
+                )?));
+            }
+            return Err(unsupported(member));
+        }
+        let state = if put {
+            // Reserve admission before waiting for idle telemetry. Otherwise a
+            // racing exposure could overtake this request and defer a motor move
+            // until after a capture that the caller thought it would precede.
+            let _admission = self.reserve_wheel(client)?;
+            let mut engine = self.engine.lock().await;
+            let session = engine
+                .as_mut()
+                .ok_or_else(|| error(0x407, "Camera unavailable"))?;
+            let position = p.integer("Position")?;
+            ensure!(
+                (0..16).contains(&position),
+                Error(0x401, "Invalid filter position".into())
+            );
+            session
+                .filter_wheel_move(position as u8, &CancellationToken::new())
+                .await?
+        } else if !busy {
+            // Polling may return the existing verified/ moving snapshot while
+            // telemetry or capture owns the transport; it never queues behind
+            // a long exposure and never fabricates a settled position.
+            if let Ok(mut engine) = self.engine.try_lock() {
+                let pending = {
+                    let s = self.state.lock().unwrap();
+                    s.busy || s.wheel_busy
+                };
+                if pending {
+                    self.cached_wheel()?
+                } else {
+                    engine
+                        .as_mut()
+                        .ok_or_else(|| error(0x407, "Camera unavailable"))?
+                        .filter_wheel_status(&CancellationToken::new())
+                        .await?
+                }
+            } else {
+                self.cached_wheel()?
+            }
+        } else {
+            self.cached_wheel()?
+        };
+        if put {
+            return Ok(Value::Null);
+        }
+        let slots = state["slots"]
+            .as_u64()
+            .ok_or_else(|| error(0x40B, "Wheel slot count unavailable"))?
+            as usize;
+        let profile = self.profiles.get(self.slot)?.filter_wheel;
+        Ok(match member {
+            "position" => {
+                if state["moving"] == true {
+                    json!(-1)
+                } else {
+                    state["position"].clone()
+                }
+            }
+            "names" => json!(
+                (0..slots)
+                    .map(|i| profile
+                        .names
+                        .get(i)
+                        .cloned()
+                        .unwrap_or_else(|| format!("Filter {}", i + 1)))
+                    .collect::<Vec<_>>()
+            ),
+            "focusoffsets" => json!(
+                (0..slots)
+                    .map(|i| profile.focus_offsets.get(i).copied().unwrap_or(0))
+                    .collect::<Vec<_>>()
+            ),
+            "devicestate" => {
+                json!([{"Name":"Position","Value":if state["moving"]==true {json!(-1)}else{state["position"].clone()}}])
+            }
+            _ => return Err(unsupported(member)),
+        })
+    }
     pub async fn refresh(&self) {
         if let Ok(mut owner) = self.engine.try_lock()
             && let Some(session) = owner.as_mut()
@@ -258,7 +497,7 @@ impl Device {
     }
     fn check(s: &State, client: u32) -> Result<Status> {
         ensure!(
-            s.clients.contains(&client) && s.status.is_some(),
+            s.clients.contains(&(false, client)) && s.status.is_some(),
             Error(0x407, "This client is not connected".into())
         );
         Ok(s.status.as_ref().unwrap().lock().unwrap().clone())
@@ -272,7 +511,7 @@ impl Device {
                 }
                 return Ok(json!(self.profiles.get(self.slot)?.camera_name()));
             }
-            "description" => return Ok(json!("ZWO camera driver with automatic retries")),
+            "description" => return Ok(json!("Camera driver with automatic retries")),
             "driverinfo" => {
                 let recovery = s
                     .status
@@ -287,7 +526,7 @@ impl Device {
             }
             "driverversion" => return Ok(json!(env!("CARGO_PKG_VERSION"))),
             "interfaceversion" => return Ok(json!(4)),
-            "connected" => return Ok(json!(s.clients.contains(&client))),
+            "connected" => return Ok(json!(s.clients.contains(&(false, client)))),
             "connecting" => {
                 if let Some(e) = &s.connection_error {
                     return Err(error(0x500, e));
@@ -444,6 +683,10 @@ impl Device {
         ensure!(
             !s.changing,
             Error(0x40B, "Connection change in progress".into())
+        );
+        ensure!(
+            member != "startexposure" || !s.wheel_busy,
+            Error(0x40B, "Filter wheel command is in progress".into())
         );
         if member == "abortexposure" {
             if s.busy {
@@ -696,5 +939,45 @@ impl Params {
             v.parse()
                 .map_err(|_| error(0x401, "Invalid client or transaction ID"))
         })
+    }
+}
+
+#[cfg(test)]
+mod wheel_tests {
+    use super::*;
+    #[test]
+    fn optical_command_admission_fences_exposure_and_is_released_on_error() {
+        let device = Device::new(
+            0,
+            Arc::new(Profiles::new(None).unwrap()),
+            Runtime {
+                directory: "unused".into(),
+                sdk: "unused".into(),
+                simulate: true,
+                sdk_simulation: None,
+            },
+            Arc::new(|_, _, _| {}),
+        );
+        {
+            let mut s = device.state.lock().unwrap();
+            s.clients.extend([(false, 7), (true, 7)]);
+            s.status = Some(Arc::new(Mutex::new(Status {
+                control_connection_available: true,
+                filter_wheel: json!({"slots":9,"position":0,"moving":false,"verified":true}),
+                ..Status::default()
+            })));
+        }
+        let command = device.reserve_wheel(7).unwrap();
+        assert_eq!(device.cached_wheel().unwrap()["position"], -1);
+        let error = device
+            .put("startexposure", &Params(BTreeMap::new()), 7)
+            .unwrap_err();
+        assert_eq!(error.downcast_ref::<Error>().unwrap().0, 0x40B);
+        assert!(device.reserve_wheel(7).is_err());
+        drop(command);
+        assert_eq!(device.cached_wheel().unwrap()["position"], 0);
+        device.state.lock().unwrap().busy = true;
+        assert!(device.reserve_wheel(7).is_err());
+        assert!(!device.state.lock().unwrap().wheel_busy);
     }
 }

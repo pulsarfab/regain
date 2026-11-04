@@ -1100,7 +1100,7 @@ dependencies = [
 
 [[package]]
 name = "regain-alpaca"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "axum",
@@ -1121,10 +1121,11 @@ dependencies = [
 
 [[package]]
 name = "regain-core"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "chrono",
+ "libc",
  "regain-transport",
  "serde",
  "serde_json",
@@ -1135,7 +1136,7 @@ dependencies = [
 
 [[package]]
 name = "regain-deepskydad"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "regain-transport",
@@ -1146,11 +1147,12 @@ dependencies = [
 
 [[package]]
 name = "regain-device"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "regain-deepskydad",
  "regain-pegasus",
+ "regain-qhy",
  "regain-transport",
  "regain-wanderer",
  "regain-zwo",
@@ -1158,7 +1160,7 @@ dependencies = [
 
 [[package]]
 name = "regain-hub"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "axum",
@@ -1192,7 +1194,7 @@ dependencies = [
 
 [[package]]
 name = "regain-pegasus"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "regain-transport",
@@ -1202,8 +1204,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "regain-qhy"
+version = "0.6.2"
+dependencies = [
+ "anyhow",
+ "libloading",
+ "regain-core",
+ "regain-transport",
+ "regain-worker",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "regain-transport"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "nusb",
@@ -1216,7 +1231,7 @@ dependencies = [
 
 [[package]]
 name = "regain-wanderer"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "regain-transport",
@@ -1227,7 +1242,7 @@ dependencies = [
 
 [[package]]
 name = "regain-worker"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "serde_json",
@@ -1235,7 +1250,7 @@ dependencies = [
 
 [[package]]
 name = "regain-zwo"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "libc",

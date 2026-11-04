@@ -38,11 +38,11 @@ public abstract class AccessoryDevice : BaseINPC, IDevice, IDisposable
 {
     protected readonly AccessorySession Session;
     protected AccessoryDevice(string kind) { Session = new(Regain.Rotator.RegainPaths.EnvironmentVariable(kind == "eta" ? "REGAIN_ETA_WORKER" : kind == "fc3" ? "REGAIN_FC3_WORKER" : "REGAIN_ACCESSORY_WORKER") ?? Path.Combine(CameraProvider.DirectoryPath, "regain-device.exe"), kind, AccessorySession.SettingsPath(kind, "nina")); Session.Diagnostic = text => Logger.Info("PulsarFab regain " + kind + ": " + text); }
-    public string Id => (Session.Kind == "eta" ? "Regain." : "ZwoGain.") + Session.Kind.ToUpperInvariant();
-    public string Name => Session.Kind == "eta" ? "PulsarFab regain Wanderer Astro ETA M54" : Session.Kind == "efw" ? "PulsarFab regain EFW Filter Wheel" : Session.Kind == "fc3" ? "PulsarFab regain Pegasus FocusCube3" : "PulsarFab regain EAF Focuser";
+    public string Id => (Session.Kind is "eta" or "cfw" ? "Regain." : "ZwoGain.") + Session.Kind.ToUpperInvariant();
+    public string Name => Session.Kind == "cfw" ? "PulsarFab regain QHY Filter Wheel (USB)" : Session.Kind == "eta" ? "PulsarFab regain Wanderer Astro ETA M54" : Session.Kind == "efw" ? "PulsarFab regain EFW Filter Wheel" : Session.Kind == "fc3" ? "PulsarFab regain Pegasus FocusCube3" : "PulsarFab regain EAF Focuser";
     public string DisplayName => Name;
     public string Category => "PulsarFab regain";
-    public string Description => Name + (Session.Kind is "fc3" or "eta" ? " over USB serial" : " over USB HID");
+    public string Description => Name + (Session.Kind is "fc3" or "eta" or "cfw" ? " over USB serial" : " over USB HID");
     public string DriverInfo => "PulsarFab regain native Rust USB driver";
     public string DriverVersion => typeof(AccessoryDevice).Assembly.GetName().Version!.ToString();
     public bool HasSetupDialog => true;
@@ -102,7 +102,9 @@ public abstract class NativeFocuser(string kind) : AccessoryDevice(kind), IFocus
     }
     public void Halt() { Session.Halt(); RaiseAllPropertiesChanged(); }
 }
-public sealed class EfwFilterWheel(IProfileService profiles) : AccessoryDevice("efw"), IFilterWheel, IVerifiedOpticalDevice
+public sealed class EfwFilterWheel(IProfileService profiles) : NativeFilterWheel(profiles, "efw");
+public sealed class QhyUsbFilterWheel(IProfileService profiles) : NativeFilterWheel(profiles, "cfw");
+public abstract class NativeFilterWheel(IProfileService profiles, string kind) : AccessoryDevice(kind), IFilterWheel, IVerifiedOpticalDevice
 {
     public bool OpticalConnectionRequested => Session.ConnectionRequested;
     public string OpticalConnectionEpoch => Session.OpticalConnectionEpoch;
@@ -120,4 +122,13 @@ public sealed class EfwFilterWheel(IProfileService profiles) : AccessoryDevice("
         while (Filters.Count > Names.Length) Filters.RemoveAt(Filters.Count - 1);
         RaiseAllPropertiesChanged(); return true;
     }
+}
+
+[Export(typeof(IEquipmentProvider))]
+public sealed class QhyUsbFilterWheelProvider : IEquipmentProvider<IFilterWheel>
+{
+    private readonly IProfileService profiles;
+    [ImportingConstructor] public QhyUsbFilterWheelProvider(IProfileService profiles) => this.profiles = profiles;
+    public string Name => "PulsarFab regain";
+    public IList<IFilterWheel> GetEquipment() => [new QhyUsbFilterWheel(profiles)];
 }

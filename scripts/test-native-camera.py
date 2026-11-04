@@ -16,9 +16,9 @@ class Camera:
                                         creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
         self.id = 0
 
-    def call(self, method, member='', params=None, error=0):
+    def call(self, method, member='', params=None, error=0, client=1):
         self.id += 1
-        request = json.dumps(dict(version=1, id=self.id, method=method, member=member, params=params)).encode()
+        request = json.dumps(dict(version=1, id=self.id, clientID=client, method=method, member=member, params=params)).encode()
         self.process.stdin.write(struct.pack('<I', len(request)) + request)
         self.process.stdin.flush()
         header = self.process.stdout.read(4)
@@ -71,6 +71,18 @@ def exercise(binary, directory, prepare=False):
             finally:
                 other.close()
             camera.call('put', 'connected', {'Connected': True})
+            # Same owner, independent camera clients; wheel roles never inherit
+            # camera connection rights even when the numeric client ID matches.
+            assert not camera.call('wheel-get','connected')
+            camera.call('wheel-get','names',error=0x407)
+            camera.call('put','connected',{'Connected':True},client=2)
+            camera.call('put','connected',{'Connected':False})
+            assert not camera.call('get','connected')
+            assert camera.call('get','connected',client=2)
+            camera.call('put','connected',{'Connected':True})
+            camera.call('put','connected',{'Connected':False},client=2)
+            assert camera.call('get','connected')
+
             assert camera.call('get', 'name') == camera.call('get', 'sensorname') == profile['camera']['name']
             assert camera.call('get', 'gain') == 101
             assert 'state: Idle; retries: 0' in camera.call('get', 'driverinfo')

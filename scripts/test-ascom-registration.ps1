@@ -10,6 +10,8 @@ try {
     $registration = Start-Process -FilePath $exe -ArgumentList '/regserver' -WindowStyle Hidden -Wait -PassThru
     if ($registration.ExitCode) { throw 'Machine registration failed' }
     foreach ($architecture in 'System32','SysWOW64') {
+        & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-qhy-ascom-metadata.ps1')
+        if ($LASTEXITCODE) { throw 'Registered QHY wheel COM activation failed' }
         & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-fc3-ascom-client.ps1') -MetadataOnly
         if ($LASTEXITCODE) { throw 'Registered FocusCube3 COM activation failed' }
         & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-falcon-ascom-client.ps1') -MetadataOnly

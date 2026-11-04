@@ -8,9 +8,10 @@
 **Recover failed camera downloads. Control your equipment without vendor SDKs. Run your rig through one Alpaca server.**
 
 PulsarFab regain brings Rust device drivers to **NINA**, **native Windows ASCOM**,
-and **Alpaca**. Its direct camera drivers can reread an image after a failed USB
-download, saving the exposure. SDK mode covers more ZWO cameras and isolates the
-vendor SDK in a separate process.
+and **Alpaca**. Supported ZWO direct camera drivers can reread an image after a
+failed USB download, saving the exposure. QHY600M adds SDK-free capture, cooling,
+video and filter-wheel control; its recovery uses replacement exposures. SDK
+backends isolate the vendor libraries in separate processes.
 
 [Documentation](https://pulsarfab.com/docs/regain/) ·
 [Downloads](https://github.com/pulsarfab/regain/releases/latest) ·
@@ -89,6 +90,27 @@ temperature and cooler-power readings and labels them **telemetry held**, so
 the cooling chart keeps its axes. Regain records failures and recovery in NINA's
 logs under `%LOCALAPPDATA%\NINA\Logs`; search for `PulsarFab regain`.
 
+### Use a QHY600M and filter wheel
+
+From **0.6.2**, choose QHY **Direct USB** or **SDK** in the NINA camera setup,
+an ASCOM camera slot, or the Alpaca server. Both capture full-resolution
+9600 × 6422 RAW16 stills in photographic mode 0, with bin 1, software ROI,
+gain, offset, USB traffic and cooling. Direct USB is validated for the QHY600M
+U3G20 revision and firmware dated 2024-10-18 on Windows. SDK mode uses your
+installed QHY SDK; Regain does not bundle it.
+
+QHY downloads consume the image. A failed download needs an explicitly enabled
+replacement exposure; it cannot reread the previous frame. Direct USB still uses
+the installed QHY USB driver, but loads no vendor SDK.
+[QHY600 setup, recovery and limits](docs/qhy600.md).
+
+The **QHYCFW3 XL nine-position wheel** works through either its camera 4-pin cable
+or standalone USB serial, in NINA, native ASCOM and Alpaca. The 4-pin wheel shares
+the selected camera connection in Direct USB and SDK modes. Standalone USB needs
+neither a camera connection nor an SDK and requires the wheel's USB control mode.
+Regain verifies filter position, supports names and offsets, and does not replay
+uncertain moves. [Wheel setup and connection sharing](docs/qhycfw3.md).
+
 ### Run the whole rig from a small headless computer
 
 One **regain Alpaca server** exposes supported cameras, rotators, filter wheels,
@@ -143,6 +165,14 @@ SDK video and Direct USB video on ASI585MM Pro, ASI662MC, and ASI676MC support
 live exposure/gain edits, settings generations, and marked transition frames.
 Other direct cameras use repeated still captures. Native direct video is
 limited to 30-second exposures and cannot reread an earlier video frame.
+
+**QHY600 Direct USB video** supports full-frame native RAW8 and RAW16 in
+photographic, high-gain, extended-full-well and their 2CMS variants
+(read modes **0, 1, 2, 3, 8, 9**). It uses the same continuous acquisition API,
+with bounded latest-frame buffering and fractional delivery FPS limits. Changing
+exposure, gain, bit depth or read mode restarts and settles the stream; faults
+require an explicit stop/restart. QHY video is Windows-only and limited to
+30-second exposures. [Video API, modes and measured throughput](docs/qhy600-video.md).
 
 Color-camera clients can also use [shared software white balance and AWB](docs/white-balance.md)
 across SDK and Direct USB, with raw output preserved by default. These are
@@ -206,12 +236,14 @@ and external conformance acceptance remain tracked in the hub plan.
 
 | Integration | Where it runs | Equipment |
 | --- | --- | --- |
-| **Native NINA plugin** | Windows x64, NINA ≥3.2.0.9001 | Cameras, CAA, EFW, EAF, FocusCube3, Falcon V2, ETA M54 |
-| **Native ASCOM drivers** | Windows x64; 32/64-bit clients | Four camera entries, CAA, EFW, EAF, FocusCube3, Falcon V2, OFP2 and ETA M54 |
+| **Native NINA plugin** | Windows x64, NINA ≥3.2.0.9001 | ZWO/QHY cameras, QHYCFW3 (4-pin or USB), CAA, EFW, EAF, FocusCube3, Falcon V2, ETA M54 |
+| **Native ASCOM drivers** | Windows x64; 32/64-bit clients | Four ZWO/QHY camera entries, paired QHY wheels and standalone USB wheel, CAA, EFW, EAF, FocusCube3, Falcon V2, OFP2 and ETA M54 |
 | **Universal Alpaca server** | Windows, Linux, macOS | Camera slots and all supported accessories, including OFP2 |
 | **[Rust crates](https://crates.io/search?q=regain-) and worker CLIs** | Windows, Linux, macOS | Embed USB, HID, and serial device control in another application |
 
 OFP2 connects through native ASCOM or Alpaca; NINA can use either connection.
+QHY camera and wheel integrations are new in 0.6.2. QHY camera backends require
+Windows; the standalone USB wheel also works through the cross-platform serial worker.
 ETA physical
 identity/position reads are verified; movement validation remains pending. [ETA guide](docs/eta.md).
 OFP2, FocusCube3, Falcon V2 and ETA share their device connection among
@@ -223,8 +255,8 @@ ASCOM clients; other frontends need exclusive access to the device. See [connect
 
 ### Camera modes
 
-**Direct USB** uses regain's Rust drivers without the ZWO SDK. **ZWO SDK** is the
-default mode and supports a broader range of cameras. Both work in NINA, native
+**Direct USB** uses regain's Rust drivers without the vendor SDK. **Vendor SDK** is the
+default mode and supports a broader range of ZWO cameras. Both work in NINA, native
 ASCOM, and Alpaca.
 
 | Camera | SDK-free capture | Reread the same image after a failed download | SDK mode |
@@ -235,10 +267,11 @@ ASCOM, and Alpaca.
 | **[ZWO ASI662MC](docs/asi662mc.md)** | Yes, experimental; RAW16 bin 1 | Yes; short captures use a ~100 ms frame interval | Yes |
 | **[ZWO ASI585MM Pro](docs/asi585mm-pro.md)** | Yes, experimental; RAW16 bins 1–4 and cooling | Yes; short captures use a ~100 ms frame interval | Yes |
 | **ZWO ASI220MM Mini / Duo guide sensor** | Yes, experimental | No direct reread support | Yes |
+| **[QHY600M](docs/qhy600.md)** | Windows, experimental; U3G20 revision, mode 0 RAW16 stills and cooling; RAW8/RAW16 worker video in modes 0/1/2/3/8/9 | No; failed reads require an explicit replacement exposure | Yes, with the installed QHY SDK; mode 0 stills |
 | **Other ZWO ASI cameras** | No | Depends on the SDK keeping the image available | If supported by the bundled SDK |
 
 SDK download retries depend on the SDK's ready-frame state; they do not use
-regain's direct memory reread. Both backends currently capture RAW16, with
+regain's direct memory reread. NINA, ASCOM and Alpaca still captures use RAW16, with
 model-specific exposure and binning limits. Cooler, heater, fan, and LED controls
 appear only when supported; ASI585MM Pro exposes cooling but no controllable heater.
 ASI585MC variants are not covered by the ASI585MM Pro direct driver.
@@ -248,7 +281,7 @@ Direct cameras accept USB 2 high-speed and USB 3 connections where supported
 by their hardware. USB 2 validation varies by model; ASI585MM Pro has been
 tested on Windows USB 3 only. See [USB 2 support and validation](docs/usb2-cameras.md).
 
-### Accessories: all SDK-free
+### Accessories
 
 <a id="caa-rotator"></a>
 <a id="efw-filter-wheel-and-eaf-focuser"></a>
@@ -258,6 +291,7 @@ tested on Windows USB 3 only. See [USB 2 support and validation](docs/usb2-camer
 | Hardware | Connection | Controls |
 | --- | --- | --- |
 | **ZWO CAA** | USB HID | Rotation, sync, reverse, limits |
+| **[QHYCFW3 XL, 9 positions](docs/qhycfw3.md)** | QHY600M 4-pin bridge (Direct USB or SDK); standalone USB serial | Filter selection, position verification, names and offsets |
 | **ZWO EFW** | USB HID | Filter selection, names, offsets, direction, calibration |
 | **ZWO EAF** | USB HID | Focus, halt, reverse, backlash, travel limit, temperature |
 | **Pegasus Astro FocusCube3** | USB serial | Focus, halt, temperature, reverse, backlash, speed |

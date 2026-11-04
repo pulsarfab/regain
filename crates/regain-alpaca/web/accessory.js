@@ -1,7 +1,7 @@
 'use strict';
 const $=id=>document.getElementById(id);
 const wheel=location.pathname.includes('filterwheel'),slot=Number(location.pathname.match(/\/(?:focuser|filterwheel)\/(\d+)\//)?.[1]||0),deviceType=wheel?'filterwheel':'focuser';
-const setup=wheel?'/setup/api/accessory/efw':'/setup/api/focusers/'+slot,api='/api/v1/'+deviceType+'/'+slot+'/';
+const setup=wheel?'/setup/api/accessory/'+(slot===1?'cfw':'efw'):'/setup/api/focusers/'+slot,api='/api/v1/'+deviceType+'/'+slot+'/';
 let kind=wheel?'efw':null,fc3=false,eta=false;
 const client=crypto.getRandomValues(new Uint32Array(1))[0]||1;
 let profile,connected=false,busy=false,initialized=false;
@@ -25,7 +25,8 @@ function renderKind(name){
 $('title').textContent=$('device-title').textContent=name;$('label').value=profile.label||name;$('focuser-name').hidden=wheel;
 $('target-label').textContent=eta?'Back focus (µm, preserves tilt)':wheel?'Filter slot (1–N)':'Absolute position (steps)';$('target').min=wheel?1:0;
 $('efw').hidden=!wheel;$('eaf').hidden=wheel||eta;$('eta').hidden=!eta;$('halt').hidden=wheel||eta;
-$('transport').textContent=`Device ${slot} · ${eta?'Native serial · select by port':fc3?'Native USB serial':'Native USB HID'}`;
+$('wheel-calibration').hidden=kind!=='efw';$('unidirectional').parentElement.hidden=kind!=='efw';
+$('transport').textContent=`Device ${slot} · ${eta||kind==='cfw'?'Native serial · select by port':fc3?'Native USB serial':'Native USB HID'}`;
 if(fc3){$('beep').parentElement.hidden=true;$('limit').parentElement.hidden=true;$('backlash').max=1000;$('speed').parentElement.hidden=false;}
 }
 $('save-name').onclick=()=>run(async()=>{const updated={...profile,label:$('label').value.trim()};await json(setup,updated);await load();});

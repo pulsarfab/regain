@@ -31,16 +31,18 @@ public sealed class OpticalWorkerRecoveryTests
         }
     }
 
-    [Fact]
-    public void WheelReopensAfterStaleHandleAndVerifiesSlotWithoutMoving()
+    [Theory]
+    [InlineData("efw")]
+    [InlineData("cfw")]
+    public void WheelReopensAfterStaleHandleAndVerifiesSlotWithoutMoving(string kind)
     {
         using var fixture = new Fixture();
-        using var session = new AccessorySession(fixture.Worker, "efw", Path.Combine(fixture.Root, "efw.json"));
-        session.Select("0102030405060709"); session.Connect(); Assert.Equal(3, session.Status().Position);
-        fixture.Fail("efw");
+        using var session = new AccessorySession(fixture.Worker, kind, Path.Combine(fixture.Root, kind+".json"));
+        session.Select(kind == "cfw" ? "COM3" : "0102030405060709"); session.Connect(); Assert.Equal(3, session.Status().Position);
+        fixture.Fail(kind);
         Assert.Equal(3, session.Status().Position); Assert.True(session.Connected);
-        Assert.Equal(2, fixture.Commands("efw").Count(c => c == "identity"));
-        Assert.DoesNotContain("move", fixture.Commands("efw"));
+        Assert.Equal(2, fixture.Commands(kind).Count(c => c == "identity"));
+        Assert.DoesNotContain("move", fixture.Commands(kind));
     }
 
     [Fact]
@@ -71,53 +73,61 @@ public sealed class OpticalWorkerRecoveryTests
         Assert.DoesNotContain(fixture.Commands("caa"), command => command.Contains("move"));
     }
 
-    [Fact]
-    public void ChangedWheelSlotBlocksSubsequentReadsAndMovesWithoutModifyingSavedFilters()
+    [Theory]
+    [InlineData("efw")]
+    [InlineData("cfw")]
+    public void ChangedWheelSlotBlocksSubsequentReadsAndMovesWithoutModifyingSavedFilters(string kind)
     {
         using var fixture = new Fixture();
-        using var session = new AccessorySession(fixture.Worker, "efw", Path.Combine(fixture.Root, "efw.json"));
-        session.Select("0102030405060709"); session.Connect(); _ = session.Status();
+        using var session = new AccessorySession(fixture.Worker, kind, Path.Combine(fixture.Root, kind+".json"));
+        session.Select(kind == "cfw" ? "COM3" : "0102030405060709"); session.Connect(); _ = session.Status();
         var profile = File.ReadAllText(session.ProfilePath);
-        File.WriteAllText(Path.Combine(fixture.State, "efw-state.json"), "{\"position\":0,\"slots\":7,\"moving\":false,\"error\":0}");
-        fixture.Fail("efw");
+        File.WriteAllText(Path.Combine(fixture.State, kind+"-state.json"), "{\"position\":0,\"slots\":7,\"moving\":false,\"error\":0}");
+        fixture.Fail(kind);
         Assert.Contains("Optical state", Assert.Throws<IOException>(() => session.Status()).Message);
         Assert.Throws<IOException>(() => session.Move(3));
         Assert.Equal(profile, File.ReadAllText(session.ProfilePath));
-        Assert.DoesNotContain("move", fixture.Commands("efw"));
+        Assert.DoesNotContain("move", fixture.Commands(kind));
         session.Disconnect(); session.Connect(); Assert.Equal(0, session.Status().Position);
     }
 
-    [Fact]
-    public void LostWheelMoveAcknowledgementIsNeverReplayedOrHiddenByStatusRecovery()
+    [Theory]
+    [InlineData("efw")]
+    [InlineData("cfw")]
+    public void LostWheelMoveAcknowledgementIsNeverReplayedOrHiddenByStatusRecovery(string kind)
     {
         using var fixture = new Fixture();
-        using var session = new AccessorySession(fixture.Worker, "efw", Path.Combine(fixture.Root, "efw.json"));
-        session.Select("0102030405060709"); session.Connect(); _ = session.Status();
-        File.WriteAllText(Path.Combine(fixture.State, "efw-lose-move-ack"), "");
+        using var session = new AccessorySession(fixture.Worker, kind, Path.Combine(fixture.Root, kind+".json"));
+        session.Select(kind == "cfw" ? "COM3" : "0102030405060709"); session.Connect(); _ = session.Status();
+        File.WriteAllText(Path.Combine(fixture.State, kind+"-lose-move-ack"), "");
         Assert.Throws<IOException>(() => session.Move(4));
         Assert.Throws<IOException>(() => session.Status());
         Assert.Throws<IOException>(() => session.Move(4));
-        Assert.Equal(1, fixture.Commands("efw").Count(c => c == "move"));
-        Assert.Equal(1, fixture.Commands("efw").Count(c => c == "identity"));
+        Assert.Equal(1, fixture.Commands(kind).Count(c => c == "move"));
+        Assert.Equal(1, fixture.Commands(kind).Count(c => c == "identity"));
     }
 
-    [Fact]
-    public void ManualDisconnectCannotBeUndoneByAnAutomaticStatusRead()
+    [Theory]
+    [InlineData("efw")]
+    [InlineData("cfw")]
+    public void ManualDisconnectCannotBeUndoneByAnAutomaticStatusRead(string kind)
     {
         using var fixture = new Fixture();
-        using var session = new AccessorySession(fixture.Worker, "efw", Path.Combine(fixture.Root, "efw.json"));
-        session.Select("0102030405060709"); session.Connect(); _ = session.Status(); session.Disconnect();
+        using var session = new AccessorySession(fixture.Worker, kind, Path.Combine(fixture.Root, kind+".json"));
+        session.Select(kind == "cfw" ? "COM3" : "0102030405060709"); session.Connect(); _ = session.Status(); session.Disconnect();
         Assert.Throws<IOException>(() => session.Status());
         Assert.False(session.ConnectionRequested); Assert.False(session.Connected);
-        Assert.Equal(1, fixture.Commands("efw").Count(c => c == "identity"));
+        Assert.Equal(1, fixture.Commands(kind).Count(c => c == "identity"));
     }
 
-    [Fact]
-    public void WorkerExitRecoversWithoutDiscardingEitherAscomClientLease()
+    [Theory]
+    [InlineData("efw")]
+    [InlineData("cfw")]
+    public void WorkerExitRecoversWithoutDiscardingEitherAscomClientLease(string kind)
     {
         using var fixture = new Fixture();
-        using var session = new AccessorySession(fixture.Worker, "efw", Path.Combine(fixture.Root, "efw.json"));
-        session.Select("0102030405060709");
+        using var session = new AccessorySession(fixture.Worker, kind, Path.Combine(fixture.Root, kind+".json"));
+        session.Select(kind == "cfw" ? "COM3" : "0102030405060709");
         var shared = new SharedAccessoryDevice(session, (_, _) => { });
         Guid first = Guid.NewGuid(), second = Guid.NewGuid();
         shared.Connect(first, true); shared.Connect(second, true); _ = session.Status();
@@ -128,6 +138,6 @@ public sealed class OpticalWorkerRecoveryTests
         Assert.True(shared.Connected(first)); Assert.True(shared.Connected(second));
         shared.Connect(first, false); Assert.True(shared.Connected(second));
         shared.Connect(second, false); Assert.False(session.Connected);
-        Assert.DoesNotContain("move", fixture.Commands("efw"));
+        Assert.DoesNotContain("move", fixture.Commands(kind));
     }
 }
