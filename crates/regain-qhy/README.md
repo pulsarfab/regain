@@ -11,7 +11,8 @@ can reconnect and take an explicitly reported replacement exposure. Same-frame
 rereads, hardware binning and privileged USB reset are not advertised.
 
 The Windows direct pipe worker also supports opt-in full-frame RAW8/RAW16 video in
-photographic mode 0, using the shared continuous acquisition protocol. USB reads
+photographic, high-gain, extended-full-well and 2CMS modes (IDs 0, 1, 2, 3, 8, 9),
+using the shared continuous acquisition protocol. USB reads
 continue independently of delivery FPS and slow clients. This does not add a
 NINA Live View or ASCOM/Alpaca readout mode. See
 [video protocol and limits](https://github.com/pulsarfab/regain/blob/main/docs/qhy600-video.md).

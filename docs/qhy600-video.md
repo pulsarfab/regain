@@ -5,17 +5,34 @@ revision. It uses Rust and the Windows Cypress system driver, without loading
 the QHY SDK. This is the worker protocol used by pier-camera clients; NINA,
 ASCOM and Alpaca continue using their existing single-exposure path.
 
-Initial scope: photographic mode 0, full 9600 × 6422 RAW8 or RAW16, bin 1, 1 µs–30 s
+Scope: full 9600 × 6422 RAW8 or RAW16, bin 1, 1 µs–30 s
 exposure. Video requires `dark: false`; cover the sensor physically for dark
-video. Video ROI, hardware binning and other read modes are not exposed.
-The broader [SDK video tests](qhy600-development.md#sdk-video-acceptance-2026-11-03)
-are reference evidence, not additional Direct USB capabilities.
+video. Video ROI, hardware binning and fiber-only read modes are not exposed.
+
+Select `readMode` using the SDK's numeric IDs; the default is 0:
+
+| ID | Sensor read mode |
+|---|---|
+| 0 | PhotoGraphic DSO 16BIT |
+| 1 | High Gain Mode 16BIT |
+| 2 | Extend Fullwell Mode |
+| 3 | Extend Fullwell 2CMS |
+| 8 | 2CMS-0 |
+| 9 | 2CMS-1 |
+
+Each mode supports both RAW8 and RAW16 video. The `16BIT` text in the SDK's
+mode name does not force the output bit depth. Gain remains 0–200, but its
+hardware mapping depends on the read mode. Gain values are not interchangeable
+between different modes for calibration. Reply `hardwareReadMode` identifies
+the mode used for the delivered image. Still captures remain mode 0 and reject
+other read-mode IDs.
 
 ## Protocol
 
 Launch `regain-device qhy camera-direct --serve`. Open the exact camera ID using
 the existing framed JSON protocol. `open` advertises `captureModes`,
-`videoBitDepths`, `videoMaxExposureMicroseconds`, `videoGeometry` and `videoFpsScope`.
+`videoReadModes` (IDs and names), `videoBitDepths`, `videoMaxExposureMicroseconds`,
+`videoGeometry` and `videoFpsScope`.
 Repeat `start` → `status` → `download` with parameters such as:
 
 ```json
@@ -23,7 +40,7 @@ Repeat `start` → `status` → `download` with parameters such as:
   "mode": "video",
   "width": 9600, "height": 6422, "bin": 1, "x": 0, "y": 0,
   "microseconds": 100000, "dark": false, "gain": 30, "maxFps": 2,
-  "bitDepth": 8
+  "bitDepth": 8, "readMode": 1
 }
 ```
 
@@ -44,7 +61,7 @@ the ZWO pier cameras. Polls return either status without pixels or one complete
 image. Slow/blocked output runs separately from the hardware owner. Metadata
 includes settings generations, replacement counts and host receipt timing.
 
-Exposure, gain or bit-depth edits restart the QHY stream at a frame boundary. The driver
+Exposure, gain, bit-depth or read-mode edits restart the QHY stream at a frame boundary. The driver
 drains transition data for the old plus new exposure duration and discards at
 least two complete frames. Changing only FPS does not restart the camera.
 `stop`/`close` cancel and drain pending USB I/O before freeing its buffers.
@@ -93,10 +110,18 @@ cancellation and return to RAW16 stills. Evidence is in `direct-video-raw8-01`
 and `direct-video-raw16-03`. Full-sensor framing and corruption regression tests
 also pass.
 
+The complete sensor-mode matrix then passed 171 distinct full-resolution
+images across IDs 0/1/2/3/8/9, including both bit depths, gain boundaries,
+cancellation, continuous mode switches, all twelve blocked-output combinations
+and nine return-to-still images. All 200 SDK reference images for the five added
+modes matched the USB payload exactly. Evidence is in `direct-read-modes-01`
+and the [read-mode development record](qhy600-development.md#direct-video-sensor-read-modes-2026-11-03).
+
 ```powershell
 cargo build --release -p regain-device --locked -j 2
 python scripts/inspection/qhy_direct_video_acceptance.py --output artifacts/qhy600/NEW-DIRECT-VIDEO-RUN
 python scripts/inspection/qhy_direct_video_acceptance.py --bits 8 --output artifacts/qhy600/NEW-RAW8-VIDEO-RUN
+python scripts/inspection/qhy_direct_video_acceptance.py --all-read-modes --output artifacts/qhy600/NEW-READ-MODES-RUN
 ```
 
 Run only with an idle, operator-authorized camera. The script selects
@@ -107,10 +132,7 @@ physical cable-loss recovery, other revisions or optical calibration.
 
 ## Further modes
 
-SDK reference tests succeeded for high gain (1), extended full well (2),
-extended full well 2CMS (3), and 2CMS-0/1 (8/9), in both bit depths. Exposing
-these through Direct USB still needs per-mode command traces, configuration
-validation and switching tests. Video ROI would need equivalent tracing and
-geometry/framing tests. Hardware 3×3 binning (5) timed out in both SDK formats;
+Video ROI still needs sensor-command tracing and geometry/framing tests.
+Hardware 3×3 binning (5) timed out in both SDK formats;
 it needs investigation before implementation. Fiber-only modes are outside the
 attached USB camera's tested scope.

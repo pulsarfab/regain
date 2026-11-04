@@ -18,6 +18,27 @@ fn capture_bit_depth(params: &Value, video: bool) -> Result<u8> {
     Ok(bits.unwrap() as u8)
 }
 
+fn capture_read_mode(params: &Value, video: bool) -> Result<u8> {
+    let mode = params
+        .get("readMode")
+        .map_or(Some(0), Value::as_u64)
+        .ok_or_else(|| invalid("QHY readMode must be an integer"))?;
+    let mode = crate::readout::validate(mode)?;
+    ensure!(
+        video || mode == 0,
+        invalid("QHY stills currently require readMode 0")
+    );
+    Ok(mode)
+}
+
+#[derive(PartialEq)]
+struct VideoSettings {
+    exposure: Exposure,
+    gain: i64,
+    bit_depth: u8,
+    read_mode: u8,
+}
+
 enum Backend {
     Sdk(Sdk),
     #[cfg(windows)]
@@ -146,7 +167,7 @@ struct Host {
     wheel_slots: Option<u8>,
     wheel_expected: Option<u8>,
     wheel_pending: Option<crate::cfw::Motion>,
-    video_params: Option<(Exposure, i64, u8)>,
+    video_params: Option<VideoSettings>,
     video_interval: Duration,
     video_delivered: Option<Instant>,
     background_error: Option<String>,
@@ -424,6 +445,7 @@ impl Host {
             "controls":self.controls.values().collect::<Vec<_>>(),"backend":if self.direct{"direct"}else{"sdk"},
             "captureModes":if self.direct {json!(["still","video"])} else {json!(["still"])},
             "videoBitDepths":if self.direct {json!([8,16])} else {json!([])},
+            "videoReadModes":if self.direct {json!(crate::readout::MODES.iter().map(|(id,name)| json!({"id":id,"name":name})).collect::<Vec<_>>())} else {json!([])},
             "videoMaxExposureMicroseconds":if self.direct {json!(30_000_000)} else {Value::Null},
             "videoFrameRecoveryAttempts":0,"videoFpsScope":"delivery","videoGeometry":"full-frame","videoScalarUpdates":false}),
         )
@@ -584,6 +606,11 @@ impl Host {
                 );
                 let video = mode == Some("video");
                 let bit_depth = capture_bit_depth(&p, video)?;
+                let read_mode = capture_read_mode(&p, video)?;
+                // Validate these protocol fields on every platform; only the
+                // Windows direct backend currently starts native video.
+                #[cfg(not(windows))]
+                let _ = (bit_depth, read_mode);
                 let fps = p
                     .get("maxFps")
                     .map_or(Some(1.), Value::as_f64)
@@ -644,9 +671,13 @@ impl Host {
                     );
                     #[cfg(windows)]
                     if video {
-                        let reuse = self.video_params.as_ref().is_some_and(|(old, g, bits)| {
-                            old == &e && *g == gain && *bits == bit_depth
-                        });
+                        let settings = VideoSettings {
+                            exposure: e.clone(),
+                            gain,
+                            bit_depth,
+                            read_mode,
+                        };
+                        let reuse = self.video_params.as_ref() == Some(&settings);
                         if !reuse {
                             self.stop()?;
                             // Arm cleanup before writes; a failed acknowledgement
@@ -657,14 +688,14 @@ impl Host {
                             else {
                                 unreachable!()
                             };
-                            c.start_video(u32::try_from(e.microseconds)?, bit_depth)?;
+                            c.start_video(u32::try_from(e.microseconds)?, bit_depth, read_mode)?;
                             for (kind, value) in
                                 [(0, gain), (5, self.values[&5]), (6, self.values[&6])]
                             {
                                 self.backend.as_ref().unwrap().set(kind, value)?;
                             }
                             self.values.insert(0, gain);
-                            self.video_params = Some((e.clone(), gain, bit_depth));
+                            self.video_params = Some(settings);
                         }
                         self.video_interval = if p["continuousDrain"] == true {
                             Duration::ZERO
@@ -737,7 +768,8 @@ impl Host {
                 self.cancelled = true;
                 let full = self.backend.as_mut().unwrap().download()?;
                 self.verify_wheel()?;
-                let bit_depth = self.video_params.as_ref().map_or(16, |(_, _, bits)| *bits);
+                let bit_depth = self.video_params.as_ref().map_or(16, |v| v.bit_depth);
+                let read_mode = self.video_params.as_ref().map_or(0, |v| v.read_mode);
                 pixels = if bit_depth == 8 {
                     // RAW8 video is full-frame only; retain its original allocation.
                     ensure!(full.len() == 9600 * 6422, "Invalid QHY RAW8 frame length");
@@ -767,7 +799,7 @@ impl Host {
                 };
                 #[cfg(not(windows))]
                 let video_status = Value::Null;
-                json!({"width":e.width,"height":e.height,"bytes":pixels.len(),"vendor":"qhy","hardwareReadMode":0,
+                json!({"width":e.width,"height":e.height,"bytes":pixels.len(),"vendor":"qhy","hardwareReadMode":read_mode,
                     "mode":if video {"video"}else{"still"},"bitDepth":bit_depth,"video":video_status})
             }
             "stop" => {
@@ -868,6 +900,35 @@ impl Drop for Host {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn read_mode_validation_preserves_stills_and_rejects_fiber_and_binning() {
+        assert_eq!(capture_read_mode(&json!({}), false).unwrap(), 0);
+        for mode in [0, 1, 2, 3, 8, 9] {
+            assert_eq!(
+                capture_read_mode(&json!({"readMode":mode}), true).unwrap(),
+                mode
+            );
+            assert_eq!(
+                capture_read_mode(&json!({"readMode":mode}), false).is_ok(),
+                mode == 0
+            );
+        }
+        for mode in [
+            json!(4),
+            json!(5),
+            json!(6),
+            json!(7),
+            json!(10),
+            json!(-1),
+            json!(256),
+            json!(1.5),
+            json!("1"),
+            json!(null),
+        ] {
+            assert!(capture_read_mode(&json!({"readMode":mode}), true).is_err());
+        }
+    }
 
     #[test]
     fn raw8_is_opt_in_video_only_and_invalid_depths_are_rejected() {

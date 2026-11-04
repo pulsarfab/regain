@@ -39,10 +39,10 @@ Passive instrumentation attaches only to our SDK probe, not NINA. `trace-qhy.js`
 | C0 C2 | Firmware date in first three bytes; later bytes vary |
 | C0 CA, value 0, index 8 | EEPROM model page; fields not fully decoded |
 | C0 CA, value/index 16 | Full 16-byte hardware UID |
-| 40 D1 / A0 | Single-frame initialization |
+| 40 D1 / A0 | Still/live and 2CMS selection; see read-mode trace below |
 | 40 D1 / A2 | Full-sensor vertical layout including 34 extra wire rows |
 | 40 D1 / A3 | Exposure microseconds, big-endian u32 |
-| 40 D1 / A4 | Gain/read-mode fields; mode 0 boundaries traced |
+| 40 D1 / A4 | Gain/read-mode fields; all integer gains 0–200 traced in modes 0/1/2/3/8/9 |
 | 40 D1 / A5 | SDK USB traffic parameter, 0–60 |
 | 40 D1 / A6 | Exposure start |
 | 40 D1 / A7 | Pixel format: 00 RAW8, 01 RAW16 |
@@ -69,7 +69,7 @@ The SDK can report `GetQHYCCDExposureRemaining <= 100` immediately after startin
 
 ## Capabilities and evidence
 
-Current worker: mode 0, bin 1, RAW16, software ROI from full-sensor still captures, gain, offset, USB traffic, temperature, cooler power and target. The direct worker also exposes [full-frame RAW8/RAW16 video](qhy600-video.md). Other read modes have SDK reference captures but are not frontend capabilities. Hardware binning, dew heater, Linux direct USB and retained-frame rereads are not claimed.
+Current worker: mode 0, bin 1, RAW16, software ROI from full-sensor still captures, gain, offset, USB traffic, temperature, cooler power and target. The direct worker also exposes [full-frame RAW8/RAW16 video](qhy600-video.md). Video admits read modes 0, 1, 2, 3, 8 and 9; still frontends remain mode 0. Hardware binning, dew heater, Linux direct USB and retained-frame rereads are not claimed.
 
 ### SDK video acceptance (2026-11-03)
 
@@ -119,8 +119,8 @@ artifacts/qhy600/venv/Scripts/python.exe scripts/inspection/qhy_sdk_probe.py --l
 
 These are **SDK reference tests**, not Regain frontend video acceptance.
 NINA, ASCOM and Alpaca retain single exposures. The direct worker exposes only
-photographic mode 0 RAW8/RAW16 video; the additional read modes remain
-reference-tested extensions.
+RAW8/RAW16 video in read modes 0, 1, 2, 3, 8 and 9, following the additional
+wire and gain-map acceptance below.
 
 ### Direct USB video acceptance (2026-11-03)
 
@@ -186,6 +186,70 @@ with `bitDepth` omitted, including cancel/restart. All eight returned RAW16 with
 zero replacement exposures, download retries or SDK fallback; evidence is in
 `raw8-stills-{direct,sdk}-01/results.json`.
 
+### Direct video sensor read modes (2026-11-03)
+
+The video worker accepts `readMode` IDs 0, 1, 2, 3, 8 and 9, preserving the
+SDK numbering. Both RAW8 and RAW16 are supported in each mode; default remains
+photographic mode 0. `videoReadModes` advertises names/IDs and each delivered
+frame reports `hardwareReadMode`. Read-mode changes restart and settle the
+stream and advance its settings generation. Still requests reject nonzero modes.
+
+The SDK trace separates stream/sampling selection from gain mapping:
+
+| Read mode | A0 payload byte 6 | A4 gain family |
+|---|---|---|
+| 0: photographic | 00 | Photographic |
+| 1: high gain | 00 | High gain |
+| 2: extended full well | 00 | Full well |
+| 3: extended full well 2CMS | 03 | Full well |
+| 8: 2CMS-0 | 03 | Photographic |
+| 9: 2CMS-1 | 03 | High gain |
+
+A0 payload byte 1 independently selects live (00) or still (01). A4 payload
+bytes 1–2 and 3–4 are the big-endian analogue and digital fields; bytes 14 and
+16 select the traced gain branch. The precise meanings of undocumented hardware
+bits are not inferred. Remaining unused SDK stack bytes are zeroed.
+
+All 201 integer gains were traced in every admitted mode (1,206 combinations).
+Photographic modes switch gain branches between 25 and 26; high-gain modes
+switch between 55 and 56. Full-well analogue fields differ from a nominal
+linear formula by one count at 14 settings, so the implementation preserves
+the measured table. A committed SDK trace fixture checks every mapping,
+including the unused zero fields, and validation rejects unsupported/fiber/binning
+modes before camera writes. `scripts/inspection/qhy_extract_gain_maps.py`
+reproduces the fixture from `mode-<id>-all-gains-01/usb.jsonl`.
+
+Each added mode was captured twice through the SDK in both bit depths, ten
+full 9600 × 6422 images per cycle. All 200 image hashes matched decoded USB
+payloads exactly. The wire geometry, leading 34 rows, RAW8 shared delimiter and
+RAW16 byte order are unchanged. Evidence is in
+`video-mode-<id>-wire-controls-01` (RAW16) and
+`video-mode-<id>-wire-raw8-01` under `artifacts/qhy600/`; each contains
+`wire-verification.json`. The complete QHY/core suites passed 125 tests;
+targeted clippy with warnings denied and release builds also passed.
+
+The full direct read-mode acceptance delivered 171 distinct full-resolution
+images: 162 video images and nine photographic-mode RAW16 stills. Every mode
+passed both bit depths, repeated acquisition, gain extremes/branch boundaries,
+cancellation followed by a fresh capture, and return to mode-0 stills. The
+continuous API crossed all modes in reverse order and both formats; all twelve
+blocked-output cases kept acquiring and replacing stale buffered frames.
+Metadata matched the selected mode, format and settings generation, and no
+unexpected command failures appeared. The direct worker loaded no vendor SDK.
+Evidence: `direct-read-modes-01/{results.jsonl,worker.log,sdk-module-check.json}`.
+
+Steady request cadence at 100 ms exposure (median of four subsequent full
+frames per case; these are measured test intervals, not maximum frame rates):
+
+| Mode | RAW8 | RAW16 |
+|---|---|---|
+| 0 | 477 ms | 766 ms |
+| 1 | 476 ms | 765 ms |
+| 2 | 484 ms | 774 ms |
+| 3 | 727 ms | 1172 ms |
+| 8 | 734 ms | 1164 ms |
+| 9 | 727 ms | 1164 ms |
+
 ### Review: image memory pressure
 
 Review found infallible full-image allocation in both backends, plus redundant
@@ -248,4 +312,4 @@ python scripts/inspection/qhy_acceptance.py --backend sdk --cooling-recovery --o
 - [x] Explicit first-release scope: traced U3G20 firmware, photographic mode 0, RAW16, bin 1.
 - [x] Crate package contents and user documentation; no SDK redistribution.
 
-Remaining release work is the normal review, signed-package build and installer acceptance. Broader revisions, other read modes, frontend Live View, hardware binning, Linux direct USB and privileged USB-reset integration are separate extensions. Physical still tests used five-second full frames; the advertised one-hour SDK limit was not tested with hour-long integrations.
+Remaining release work is the normal review, signed-package build and installer acceptance. Broader revisions, additional still read modes, frontend Live View, hardware binning, Linux direct USB and privileged USB-reset integration are separate extensions. Physical still tests used five-second full frames; the advertised one-hour SDK limit was not tested with hour-long integrations.

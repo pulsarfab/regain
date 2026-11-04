@@ -7,5 +7,6 @@ pub mod direct;
 #[cfg(any(windows, test))]
 mod framing;
 mod image;
+mod readout;
 pub mod sdk;
 mod worker;

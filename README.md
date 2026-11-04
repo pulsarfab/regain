@@ -81,7 +81,8 @@ explicit replacement exposure instead of rereading the old frame.
 USB wheel entry works without a camera connection or vendor SDK.
 
 Pier-camera clients can also opt into [QHY600 Direct USB video](docs/qhy600-video.md):
-full-frame mode 0 RAW8/RAW16 with continuous USB draining, latest-frame delivery and
+full-frame RAW8/RAW16 in photographic, high-gain, full-well and 2CMS modes,
+with continuous USB draining, latest-frame delivery and
 fractional FPS limits. Ordinary frontend exposures remain unchanged.
 
 <a id="how-retries-work"></a>
@@ -246,7 +247,7 @@ ASCOM, and Alpaca.
 | **[ZWO ASI662MC](docs/asi662mc.md)** | Yes, experimental; RAW16 bin 1 | Yes; short captures use a ~100 ms frame interval | Yes |
 | **[ZWO ASI585MM Pro](docs/asi585mm-pro.md)** | Yes, experimental; RAW16 bins 1–4 and cooling | Yes; short captures use a ~100 ms frame interval | Yes |
 | **ZWO ASI220MM Mini / Duo guide sensor** | Yes, experimental | No direct reread support | Yes |
-| **[QHY600M](docs/qhy600.md)** | Windows, experimental; validated U3G20 revision, mode 0 RAW16 bin 1 and cooling | No; failed reads require an explicit replacement exposure | Yes, with the installed QHY SDK; same initial mode scope |
+| **[QHY600M](docs/qhy600.md)** | Windows, experimental; U3G20 revision, mode 0 RAW16 stills and cooling; RAW8/RAW16 worker video in modes 0/1/2/3/8/9 | No; failed reads require an explicit replacement exposure | Yes, with the installed QHY SDK; mode 0 stills |
 | **Other ZWO ASI cameras** | No | Depends on the SDK keeping the image available | If supported by the bundled SDK |
 
 SDK download retries depend on the SDK's ready-frame state; they do not use

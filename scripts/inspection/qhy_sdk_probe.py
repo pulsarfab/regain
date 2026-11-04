@@ -77,7 +77,7 @@ def probe(args):
                 value=call('GetQHYCCDParam',[p,u],[handle,control],restype=d,check=False)
                 print(json.dumps({'control':control,'min':lo.value,'max':hi.value,'step':step.value,'value':value,'rangeResult':rc}),flush=True)
         if args.map_controls:
-            for control,values in [(6,[0,1,25,26,27,30,50,56,60,100,199,200]),(7,[0,1,30,100,255]),(12,[0,10,50,60])]:
+            for control,values in [(6,range(201) if args.map_gain_all else [0,1,25,26,27,30,50,56,60,100,199,200]),(7,[0,1,30,100,255]),(12,[0,10,50,60])]:
                 saved=call('GetQHYCCDParam',[p,u],[handle,control],restype=d,check=False)
                 try:
                     for value in values:
@@ -182,6 +182,7 @@ def main():
     parser.add_argument('--live',action='store_true',help='two full-frame live start/stop cycles; hash frames without saving payloads')
     parser.add_argument('--bits',type=int,choices=[8,16],default=16)
     parser.add_argument('--wire',action='store_true',help='save bulk bytes separately for SDK image comparison')
+    parser.add_argument('--map-gain-all',action='store_true',help='With --map-controls, trace every integer gain from 0 to 200')
     parser.add_argument('--map-controls',action='store_true',help='trace gain/offset/USB traffic then restore before full captures')
     parser.add_argument('--thermal',action='store_true',help='bounded manual cooling to 15 percent then off')
     parser.add_argument('--auto-cooler',action='store_true',help='trace SDK automatic target -5C for 30 seconds then off')
