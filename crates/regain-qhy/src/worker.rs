@@ -149,6 +149,46 @@ impl Backend {
 fn info(serial: &str) -> Value {
     json!({"name":"QHY600M","vendor":"qhy","serial":serial.to_ascii_lowercase(),"width":9600,"height":6422,"pixelSize":3.76,"bitDepth":16,"color":false,"bayer":0,"cooled":true,"shutter":false,"bins":[1],"formats":[2],"retainedFrameReads":false,"hostRegulatedCooling":true})
 }
+
+// A busy or unsupported device must not hide other cameras. Keep the path
+// paired with its validated identity so opening a selection probes only it.
+#[cfg(any(windows, test))]
+fn probe_devices<T>(
+    paths: Vec<String>,
+    mut probe: impl FnMut(&str) -> Result<T>,
+) -> Vec<(String, T)> {
+    paths
+        .into_iter()
+        .filter_map(|path| match probe(&path) {
+            Ok(value) => Some((path, value)),
+            Err(error) => {
+                eprintln!("QHY discovery skipped {path}: {error:#}");
+                None
+            }
+        })
+        .collect()
+}
+
+fn direct_devices() -> Result<Vec<(String, Value)>> {
+    #[cfg(windows)]
+    {
+        let paths = regain_transport::cypress::enumerate(
+            0xae18aa60_7f6a_11d4_97dd_00010229b959,
+            0x1618,
+            0xc601,
+        )?;
+        Ok(probe_devices(paths, |path| {
+            let camera = crate::direct::Camera::open(path)?;
+            Ok(info(
+                camera.identity["serial"]
+                    .as_str()
+                    .context("Missing QHY serial")?,
+            ))
+        }))
+    }
+    #[cfg(not(windows))]
+    anyhow::bail!("QHY direct USB currently requires Windows")
+}
 struct Host {
     direct: bool,
     sdk_path: PathBuf,
@@ -173,6 +213,31 @@ struct Host {
     background_error: Option<String>,
 }
 impl Host {
+    fn new(direct: bool, sdk_path: PathBuf) -> Self {
+        Self {
+            direct,
+            sdk_path,
+            backend: None,
+            serial: String::new(),
+            exposure: None,
+            ready: false,
+            values: BTreeMap::new(),
+            controls: BTreeMap::new(),
+            tick: Instant::now(),
+            power_written: Instant::now(),
+            power: 0.,
+            integral: 0.,
+            max_change: 25.,
+            cancelled: false,
+            wheel_slots: None,
+            wheel_expected: None,
+            wheel_pending: None,
+            video_params: None,
+            video_interval: Duration::ZERO,
+            video_delivered: None,
+            background_error: None,
+        }
+    }
     fn wheel_status(&mut self) -> Result<Value> {
         let backend = self.backend.as_ref().context("Camera not open")?;
         let slots = match self.wheel_slots {
@@ -212,24 +277,12 @@ impl Host {
             self.backend.is_none(),
             invalid("Discovery while connected is unavailable")
         );
-        #[cfg(windows)]
         if self.direct {
             return Ok(json!(
-                regain_transport::cypress::enumerate(
-                    0xae18aa60_7f6a_11d4_97dd_00010229b959,
-                    0x1618,
-                    0xc601
-                )?
-                .iter()
-                .map(|path| {
-                    let c = crate::direct::Camera::open(path)?;
-                    Ok(info(
-                        c.identity["serial"]
-                            .as_str()
-                            .context("Missing QHY serial")?,
-                    ))
-                })
-                .collect::<Result<Vec<_>>>()?
+                direct_devices()?
+                    .into_iter()
+                    .map(|(_, info)| info)
+                    .collect::<Vec<_>>()
             ));
         }
         let sdk = Sdk::load(&self.sdk_path)?;
@@ -287,10 +340,16 @@ impl Host {
         Ok(())
     }
     fn stop(&mut self) -> Result<()> {
-        if self.exposure.take().is_some() || self.video_params.is_some() {
+        self.stop_with(|backend| backend.context("Camera not open")?.stop())
+    }
+    fn stop_with(&mut self, stop: impl FnOnce(Option<&mut Backend>) -> Result<()>) -> Result<()> {
+        if self.exposure.is_some() || self.video_params.is_some() {
             self.ready = false;
             self.cancelled = true;
-            self.backend.as_mut().context("Camera not open")?.stop()?;
+            // Retain ownership when cleanup fails: a subsequent stop must retry
+            // the backend, and a new exposure must not bypass that cleanup.
+            stop(self.backend.as_mut())?;
+            self.exposure = None;
             self.video_params = None;
             self.video_delivered = None;
         }
@@ -318,7 +377,16 @@ impl Host {
     fn open(&mut self, p: &Value) -> Result<Value> {
         ensure!(self.backend.is_none(), invalid("Already open"));
         ensure!(p["name"] == "QHY600M", invalid("Unsupported QHY model"));
-        let list = self.list()?;
+        let devices = if self.direct {
+            direct_devices()?
+        } else {
+            Vec::new()
+        };
+        let list = if self.direct {
+            json!(devices.iter().map(|(_, info)| info).collect::<Vec<_>>())
+        } else {
+            self.list()?
+        };
         let found: Vec<_> = list
             .as_array()
             .unwrap()
@@ -339,23 +407,17 @@ impl Host {
         let backend = if self.direct {
             #[cfg(windows)]
             {
-                let paths = regain_transport::cypress::enumerate(
-                    0xae18aa60_7f6a_11d4_97dd_00010229b959,
-                    0x1618,
-                    0xc601,
-                )?;
-                let mut selected = None;
-                for path in paths {
-                    let c = crate::direct::Camera::open(&path)?;
-                    if c.identity["serial"]
+                let (path, _) = devices
+                    .iter()
+                    .find(|(_, info)| info["serial"] == self.serial)
+                    .context("QHY600M disappeared")?;
+                let mut c = crate::direct::Camera::open(path)?;
+                ensure!(
+                    c.identity["serial"]
                         .as_str()
-                        .is_some_and(|v| v.eq_ignore_ascii_case(&self.serial))
-                    {
-                        ensure!(selected.is_none(), "Ambiguous QHY serial");
-                        selected = Some(c);
-                    }
-                }
-                let mut c = selected.context("QHY600M disappeared")?;
+                        .is_some_and(|v| v.eq_ignore_ascii_case(&self.serial)),
+                    "QHY identity changed after discovery"
+                );
                 c.initialize()?;
                 Backend::Direct(c)
             }
@@ -829,29 +891,7 @@ pub fn run(direct: bool, args: Vec<String>) -> Result<()> {
         .find(|v| v[0] == "--sdk")
         .map(|v| PathBuf::from(&v[1]))
         .unwrap_or_else(Sdk::default_path);
-    let mut h = Host {
-        direct,
-        sdk_path,
-        backend: None,
-        serial: String::new(),
-        exposure: None,
-        ready: false,
-        values: BTreeMap::new(),
-        controls: BTreeMap::new(),
-        tick: Instant::now(),
-        power_written: Instant::now(),
-        power: 0.,
-        integral: 0.,
-        max_change: 25.,
-        cancelled: false,
-        wheel_slots: None,
-        wheel_expected: None,
-        wheel_pending: None,
-        video_params: None,
-        video_interval: Duration::ZERO,
-        video_delivered: None,
-        background_error: None,
-    };
+    let mut h = Host::new(direct, sdk_path);
     let h = std::cell::RefCell::new(&mut h);
     regain_core::continuous::serve_with_idle(
         |m, p| {
@@ -900,6 +940,93 @@ impl Drop for Host {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn failed_cleanup_remains_retryable_for_stills_and_video() {
+        for video in [false, true] {
+            let mut host = Host::new(true, PathBuf::new());
+            let exposure: Exposure = serde_json::from_value(json!({
+                "microseconds":5_000_000,"width":9600,"height":6422,
+                "bin":1,"x":0,"y":0,"dark":false
+            }))
+            .unwrap();
+            host.exposure = Some(exposure.clone());
+            if video {
+                host.video_params = Some(VideoSettings {
+                    exposure,
+                    gain: 30,
+                    bit_depth: 16,
+                    read_mode: 0,
+                });
+                host.video_delivered = Some(Instant::now());
+            }
+            host.ready = true;
+            host.background_error = Some("transport failed".into());
+            let mut attempts = 0;
+            assert!(
+                host.stop_with(|_| {
+                    attempts += 1;
+                    anyhow::bail!("cancel acknowledgement failed")
+                })
+                .is_err()
+            );
+            assert!(host.exposure.is_some());
+            assert_eq!(host.video_params.is_some(), video);
+            assert_eq!(host.video_delivered.is_some(), video);
+            assert!(host.background_error.is_some());
+            assert!(host.cancelled);
+            assert!(!host.ready);
+            host.stop_with(|_| {
+                attempts += 1;
+                Ok(())
+            })
+            .unwrap();
+            assert_eq!(attempts, 2);
+            assert!(host.exposure.is_none());
+            assert!(host.video_params.is_none());
+            assert!(host.video_delivered.is_none());
+            assert!(host.background_error.is_none());
+            host.stop_with(|_| panic!("idle stop must not touch hardware"))
+                .unwrap();
+        }
+    }
+
+    #[test]
+    fn discovery_keeps_healthy_devices_and_duplicate_identities() {
+        let mut visited = Vec::new();
+        let devices = probe_devices(
+            ["busy", "good-a", "unsupported", "good-b"]
+                .map(String::from)
+                .to_vec(),
+            |path| {
+                visited.push(path.to_owned());
+                match path {
+                    "busy" => anyhow::bail!("exclusive handle already held"),
+                    "unsupported" => anyhow::bail!("unvalidated firmware"),
+                    _ => Ok(info("same-serial")),
+                }
+            },
+        );
+        assert_eq!(visited, ["busy", "good-a", "unsupported", "good-b"]);
+        assert_eq!(
+            devices.iter().map(|(p, _)| p.as_str()).collect::<Vec<_>>(),
+            ["good-a", "good-b"]
+        );
+        // Do not deduplicate identities: open must still reject ambiguity.
+        assert_eq!(
+            devices
+                .iter()
+                .filter(|(_, i)| i["serial"] == "same-serial")
+                .count(),
+            2
+        );
+        assert!(
+            probe_devices(vec!["busy".into()], |_| -> Result<Value> {
+                anyhow::bail!("unavailable")
+            })
+            .is_empty()
+        );
+    }
 
     #[test]
     fn read_mode_validation_preserves_stills_and_rejects_fiber_and_binning() {

@@ -317,7 +317,7 @@ impl Camera {
                 );
                 pixels.truncate(WIDTH * HEIGHT * bytes_per_pixel);
                 if video.bit_depth == 16 {
-                    for pixel in pixels.chunks_exact_mut(2) {
+                    for pixel in pixels.as_chunks_mut::<2>().0 {
                         pixel.swap(0, 1);
                     }
                 }
@@ -409,7 +409,7 @@ impl Camera {
                 self.active = false;
                 wire.copy_within(at + LEADING_ROWS * WIDTH * 2..at + wire_bytes, 0);
                 wire.truncate(WIDTH * HEIGHT * 2);
-                for p in wire.chunks_exact_mut(2) {
+                for p in wire.as_chunks_mut::<2>().0 {
                     p.swap(0, 1);
                 }
                 return Ok(wire);

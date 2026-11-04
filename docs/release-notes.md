@@ -1,14 +1,42 @@
-# PulsarFab regain 0.6.1.9
+# PulsarFab regain 0.6.2.0
 
-Recover Regain EFW and CAA USB connections without losing track of the optics.
+QHY600M cameras and QHYCFW3 XL filter wheels now work through Regain in NINA,
+native Windows ASCOM and Alpaca.
 
-- Native NINA and Windows ASCOM EFW/CAA drivers reopen the selected hardware serial after a failed read, with bounded attempts. Recovery verifies the same filter slot or idle rotator position and settings, and preserves shared ASCOM client connections. Uncertain writes and moves are never replayed.
-- The NINA retryable camera verifies previously connected Regain optics before exposure and before image delivery. Changed or unavailable optics block imaging until explicit reconnection. A frame spanning an optical disconnect is withheld even when the final position matches; the next fresh capture can proceed after the connection and optical state are verified.
-- **Verify optical devices and recover USB connections** controls this NINA integration and is enabled by default. Recovery diagnostics appear in NINA's log and the accessory/rotator logs. Intentional accessory disconnects are respected and cannot silently remove an optical device from verification.
+- **QHY600M still capture:** choose Direct USB without the vendor SDK, or use
+  an installed QHY SDK in an isolated worker. Both support photographic mode 0,
+  full-resolution RAW16, bin 1, software ROI, gain, offset, USB traffic and
+  cooling. Direct USB is validated for the U3G20 revision with firmware dated
+  2024-10-18 on Windows. QHY images are consumed on download, so failed reads
+  require an explicitly enabled replacement exposure rather than a reread.
+- **QHYCFW3 XL wheels:** use the camera's 4-pin connection in either camera
+  backend, or standalone USB serial without a camera or SDK. The nine-position
+  wheel supports filter names, offsets and verified position readback. Shared
+  camera ownership preserves independent camera/wheel connections; uncertain
+  moves are not replayed, and changed optical state blocks exposure.
+- **Direct USB video:** worker/pier clients can capture native RAW8 or RAW16 in
+  photographic, high-gain, extended-full-well and 2CMS modes (0/1/2/3/8/9).
+  Continuous draining and bounded latest-frame buffering tolerate slow consumers.
+  Settings changes restart and settle the stream. Video supports exposures up to
+  30 seconds and requires explicit stop/restart after a fault. NINA, ASCOM and
+  Alpaca continue to expose still capture.
+- **Cleanup and discovery:** failed cancellation retains acquisition state until
+  backend cleanup succeeds. Busy or unsupported QHY devices no longer prevent
+  discovery of other supported cameras; connection rechecks the selected identity.
 
-Validation includes the full NINA and core suites, controlled EFW/CAA worker faults, and an installed NINA pass with a physical CAA-M54 and ASI6200MM Pro. Two CAA USB port cycles recovered with unchanged optics; an interrupted frame was rejected and subsequent full-frame RAW16 captures succeeded. Physical EFW reconnection, extended absences and whole-cable power loss remain unvalidated. Spontaneous recovery is scoped to Regain's native NINA and Windows ASCOM accessory drivers; it does not add this behavior to third-party ASCOM drivers or Rust Alpaca accessory workers.
+Hardware acceptance covered NINA full-resolution FITS, native ASCOM and Alpaca,
+both camera backends, and both wheel connections. The final direct video matrix
+captured 171 distinct full-resolution images across all supported modes and bit
+depths, blocked consumers, cancellation and return to still capture. All 1,206
+integer gain/mode combinations match recorded SDK transfers. Other QHY camera
+revisions, hardware binning, fiber-only modes and Linux direct camera USB remain
+outside the validated scope. No QHY vendor SDK is bundled.
 
-See [USB and optical recovery](https://github.com/pulsarfab/regain/blob/v0.6.1.9/docs/usb-recovery.md).
-Use `Regain-0.6.1.9.zip` for NINA or `Regain-ASCOM-0.6.1.9-win-x64-setup.exe` for Windows ASCOM and Alpaca.
-
-This is a managed-plugin revision. Rust crates remain at the already published `0.6.1`; no new crates.io upload is required. Existing camera recovery, USB reset, mount recovery, accessory and Hub features remain included.
+See [QHY600 setup](https://github.com/pulsarfab/regain/blob/v0.6.2.0/docs/qhy600.md),
+[video modes](https://github.com/pulsarfab/regain/blob/v0.6.2.0/docs/qhy600-video.md),
+and [filter-wheel setup](https://github.com/pulsarfab/regain/blob/v0.6.2.0/docs/qhycfw3.md).
+Use `Regain-0.6.2.0.zip` for NINA or
+`Regain-ASCOM-0.6.2.0-win-x64-setup.exe` for Windows ASCOM and Alpaca.
+Rust workspace crates advance to **0.6.2**, including the new `regain-qhy` crate.
+Existing ZWO recovery, USB reset, mount recovery, accessories and Hub features
+remain included.
