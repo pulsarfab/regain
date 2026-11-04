@@ -58,9 +58,9 @@ def probe(args):
             call('GetQHYCCDReadModeResolution', [p,u,p,p], [handle,mode,c.byref(w),c.byref(h)])
             print(json.dumps({'readMode':mode,'name':name.value.decode(),'width':w.value,'height':h.value}), flush=True)
         call('SetQHYCCDReadMode', [p,u], [handle,args.mode])
-        call('SetQHYCCDStreamMode', [p,c.c_uint8], [handle,0])
+        call('SetQHYCCDStreamMode', [p,c.c_uint8], [handle,int(args.live)])
         call('InitQHYCCD', [p], [handle])
-        call('SetQHYCCDBitsMode', [p,u], [handle,16])
+        call('SetQHYCCDBitsMode', [p,u], [handle,args.bits])
         cw,ch,pw,ph=d(),d(),d(),d()
         w,h,bits=u(),u(),u()
         call('GetQHYCCDChipInfo',[p,p,p,p,p,p,p,p],[handle,c.byref(cw),c.byref(ch),c.byref(w),c.byref(h),c.byref(pw),c.byref(ph),c.byref(bits)])
@@ -112,9 +112,44 @@ def probe(args):
             call('SetQHYCCDParam',[p,u,d],[handle,8,args.seconds*1e6])
             call('SetQHYCCDSingleFrameTimeOut',[p,u],[handle,int(args.seconds*1000)+60000])
             length=call('GetQHYCCDMemLength',[p],[handle],check=False)
-            if not w.value*h.value*2 <= length <= 512*1024*1024:
+            if not w.value*h.value*(args.bits//8) <= length <= 512*1024*1024:
                 raise RuntimeError(f'Unexpected image allocation {length}')
             pixels=(c.c_ubyte*length)()
+            if args.live:
+                live_frame = bind('GetQHYCCDLiveFrame', u, [p,p,p,p,p,p])
+                hashes = set()
+                for cycle in range(2):
+                    # A failed start can still affect hardware; always attempt stop.
+                    try:
+                        call('BeginQHYCCDLive',[p],[handle])
+                        cycle_start = time.perf_counter()
+                        for frame in range(args.frames):
+                            begin = time.perf_counter()
+                            polls, errors = 0, {}
+                            ow,oh,ob,oc=u(),u(),u(),u()
+                            while True:
+                                rc = live_frame(handle,c.byref(ow),c.byref(oh),c.byref(ob),c.byref(oc),pixels)
+                                polls += 1
+                                if rc == 0: break
+                                errors[str(rc)] = errors.get(str(rc),0)+1
+                                if time.perf_counter()-begin > args.seconds+30:
+                                    raise RuntimeError(f'Live frame deadline: {errors}')
+                                time.sleep(.01)
+                            received = time.perf_counter()
+                            if (ow.value,oh.value,ob.value,oc.value)!=(w.value,h.value,args.bits,1):
+                                raise RuntimeError(f'Unexpected live geometry {(ow.value,oh.value,ob.value,oc.value)}')
+                            size = w.value*h.value*(args.bits//8)
+                            # Hash the SDK buffer without making a second full-frame copy.
+                            digest = hashlib.sha256(memoryview(pixels).cast('B')[:size]).hexdigest()
+                            if digest in hashes: raise RuntimeError('Duplicate live frame')
+                            hashes.add(digest)
+                            print(json.dumps({'liveFrame':frame,'cycle':cycle,'bytes':size,'sha256':digest,
+                                'width':ow.value,'height':oh.value,'bits':ob.value,'channels':oc.value,
+                                'waitMs':(received-begin)*1000,'sinceBeginMs':(received-cycle_start)*1000,
+                                'polls':polls,'notReadyResults':errors}),flush=True)
+                    finally:
+                        call('StopQHYCCDLive',[p],[handle])
+                return
             if args.cancel_first:
                 call('ExpQHYCCDSingleFrame',[p],[handle],check=False)
                 time.sleep(1)
@@ -125,8 +160,8 @@ def probe(args):
                     raise RuntimeError(f'Exposure failed {rc:#x}')
                 ow,oh,ob,oc=u(),u(),u(),u()
                 call('GetQHYCCDSingleFrame',[p,p,p,p,p,p],[handle,c.byref(ow),c.byref(oh),c.byref(ob),c.byref(oc),pixels])
-                assert (ow.value,oh.value,ob.value,oc.value)==(w.value,h.value,16,1)
-                data=c.string_at(pixels,w.value*h.value*2)
+                assert (ow.value,oh.value,ob.value,oc.value)==(w.value,h.value,args.bits,1)
+                data=c.string_at(pixels,w.value*h.value*(args.bits//8))
                 output=args.output/f'frame-{frame}.raw'
                 with output.open('xb') as f: f.write(data)
                 print(json.dumps({'frame':frame,'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()}),flush=True)
@@ -144,6 +179,8 @@ def main():
     parser.add_argument('--frames',type=int,default=3)
     parser.add_argument('--seconds',type=float,default=5)
     parser.add_argument('--mode',type=int,default=0)
+    parser.add_argument('--live',action='store_true',help='two full-frame live start/stop cycles; hash frames without saving payloads')
+    parser.add_argument('--bits',type=int,choices=[8,16],default=16)
     parser.add_argument('--wire',action='store_true',help='save bulk bytes separately for SDK image comparison')
     parser.add_argument('--map-controls',action='store_true',help='trace gain/offset/USB traffic then restore before full captures')
     parser.add_argument('--thermal',action='store_true',help='bounded manual cooling to 15 percent then off')
@@ -153,6 +190,8 @@ def main():
     args=parser.parse_args()
     if not 0<=args.frames<=20 or not 0<args.seconds<=30 or not 0<=args.mode<=10:
         parser.error('Invalid bounded experiment')
+    if args.live and (args.cancel_first or not args.frames):
+        parser.error('Live testing requires frames and cannot use single-frame cancellation')
     if args.child:
         probe(args)
         return
@@ -162,7 +201,7 @@ def main():
         # Windows venv python.exe is a redirector which launches another process.
         # Attach the real interpreter, not that launcher, so SDK/USB hooks run.
         proc=subprocess.Popen([getattr(sys,'_base_executable',sys.executable),__file__,*sys.argv[1:],'--child'],stdin=subprocess.PIPE,stdout=log,stderr=subprocess.STDOUT)
-        timer=threading.Timer(60+args.frames*(args.seconds+65),proc.kill)
+        timer=threading.Timer(60+args.frames*(2 if args.live else 1)*(args.seconds+65),proc.kill)
         timer.start()
         session=None
         try:

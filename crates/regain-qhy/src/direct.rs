@@ -239,11 +239,15 @@ impl Camera {
         let wire_bytes = (HEIGHT + LEADING_ROWS) * WIDTH * 2;
         let deadline = Instant::now() + Duration::from_secs(30);
         ensure!(self.ready()?, "QHY image is not ready");
-        let mut wire = Vec::with_capacity(wire_bytes + 1024 * 1024);
+        // Reserve the whole bounded preamble/frame window before draining DDR.
+        // Even the largest permitted prefix must not trigger capacity doubling.
+        let mut wire = Vec::new();
+        wire.try_reserve_exact(wire_bytes + 4 * 1024 * 1024 + 81920)
+            .context("Cannot allocate QHY USB frame buffer")?;
+        let mut chunk = crate::image::zeroed(81920)?;
         let mut start = None;
         loop {
             ensure!(Instant::now() < deadline, "QHY image deadline");
-            let mut chunk = vec![0; 81920];
             let n = self.device.read(0x81, &mut chunk, 5000)?;
             ensure!(n > 0, "Empty QHY image transfer");
             wire.extend_from_slice(&chunk[..n]);
@@ -251,11 +255,12 @@ impl Camera {
                 self.device.abort_pipe(0x81)?;
                 self.register(0xb9, 0x23, 0)?;
                 self.active = false;
-                let mut pixels = wire[at + LEADING_ROWS * WIDTH * 2..at + wire_bytes].to_vec();
-                for p in pixels.chunks_exact_mut(2) {
+                wire.copy_within(at + LEADING_ROWS * WIDTH * 2..at + wire_bytes, 0);
+                wire.truncate(WIDTH * HEIGHT * 2);
+                for p in wire.chunks_exact_mut(2) {
                     p.swap(0, 1);
                 }
-                return Ok(pixels);
+                return Ok(wire);
             }
             ensure!(
                 wire.len() < wire_bytes + 4 * 1024 * 1024,

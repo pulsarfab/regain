@@ -6,5 +6,6 @@ mod diagnostics;
 pub mod direct;
 #[cfg(any(windows, test))]
 mod framing;
+mod image;
 pub mod sdk;
 mod worker;

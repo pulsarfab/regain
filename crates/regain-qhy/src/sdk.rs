@@ -372,7 +372,7 @@ impl Sdk {
             (expected..=MAX_FRAME).contains(&capacity),
             "Invalid SDK image allocation {capacity}"
         );
-        let mut pixels = vec![0; capacity];
+        let mut pixels = crate::image::zeroed(capacity)?;
         let (mut w, mut height_out, mut bits, mut channels) = (0, 0, 0, 0);
         // The documented SDK call is consumptive. Do not claim same-frame
         // retries or keep a ready state after it fails.

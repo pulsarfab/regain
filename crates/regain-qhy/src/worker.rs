@@ -614,12 +614,15 @@ impl Host {
                 self.cancelled = true;
                 let full = self.backend.as_mut().unwrap().download()?;
                 self.verify_wheel()?;
-                ensure!(full.len() == 9600 * 6422 * 2, "Unexpected QHY image size");
-                pixels.reserve(e.bytes()?);
-                for row in e.y..e.y + e.height {
-                    let at = (row as usize * 9600 + e.x as usize) * 2;
-                    pixels.extend_from_slice(&full[at..at + e.width as usize * 2]);
-                }
+                pixels = crate::image::crop_raw16(
+                    full,
+                    9600,
+                    6422,
+                    e.x as usize,
+                    e.y as usize,
+                    e.width as usize,
+                    e.height as usize,
+                )?;
                 self.exposure = None;
                 self.cancelled = false;
                 json!({"width":e.width,"height":e.height,"bytes":pixels.len(),"vendor":"qhy","hardwareReadMode":0})

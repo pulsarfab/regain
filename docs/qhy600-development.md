@@ -71,6 +71,83 @@ The SDK can report `GetQHYCCDExposureRemaining <= 100` immediately after startin
 
 Current worker: mode 0, bin 1, RAW16, software ROI from full-sensor captures, gain, offset, USB traffic, temperature, cooler power and target. Modes 1 and 2 have reference captures but are not frontend capabilities. Video, hardware binning, dew heater, Linux direct USB and retained-frame rereads are not claimed.
 
+### SDK video acceptance (2026-11-03)
+
+Tested the attached `QHY600M-96763b4ab6a79e117` with the installed SDK
+(`qhyccd.dll` SHA256 `5f0957e29ff510f19fa5de8688162fb4b9f4562b0b79b693dcbb9377bf281d14`).
+Each successful case captured two ten-frame live runs on the same open handle,
+with `StopQHYCCDLive` between runs. Exposure was 100 ms, USB traffic was the SDK
+default 50, and every frame used the entire 9600 × 6422 output. All 240 returned
+frames had the expected format and distinct SHA256 hashes. No ROI was used.
+
+| SDK read mode | RAW8 | RAW16 | Median frame interval, 8 / 16 bit |
+|---|---|---|---|
+| 0: PhotoGraphic DSO 16BIT | 20 passed | 20 passed | 478 / 759 ms |
+| 1: High Gain Mode 16BIT | 20 passed | 20 passed | 474 / 764 ms |
+| 2: Extend Fullwell Mode | 20 passed | 20 passed | 477 / 761 ms |
+| 3: Extend Fullwell 2CMS | 20 passed | 20 passed | 733 / 1168 ms |
+| 8: 2CMS-0 | 20 passed | 20 passed | 729 / 1166 ms |
+| 9: 2CMS-1 | 20 passed | 20 passed | 732 / 1170 ms |
+| 5: Bin3*3Mode (hardware), full 3200 × 2144 output | No frame | No frame | Timed out after 30.1 s |
+
+Intervals exclude the first frame of each run and include SDK polling, tracing,
+and hashing overhead; they are observed test cadence, not maximum frame rates.
+The hardware-bin mode accepted setup/start but returned no successful frame in
+either format. Both attempts stopped and closed successfully. This is a failed
+test of that mode with this setup, not proof that all QHY600 variants lack it.
+Modes 4, 6, 7 and 10 are labeled **Fiber Only** by this SDK and were not attempted
+on the USB connection.
+
+The probe uses `SetQHYCCDStreamMode(1)` before `InitQHYCCD`, then bits, bin/ROI,
+exposure, `BeginQHYCCDLive`, bounded `GetQHYCCDLiveFrame` polling, and
+`StopQHYCCDLive`. A fresh open selects a different read mode. The passive USB
+trace shows `D1 A0 00` for live initialization versus `D1 A0 01` for stills;
+`D1 A7 00/01` selects 8/16-bit output. The live path does not repeat the still
+`A6`/`B9:31` start handshake for each frame. Do not reuse the still lifecycle for
+video. Failed live polls return `0xffffffff` even during healthy acquisition;
+future production support needs a bounded frame deadline, not immediate camera
+reinitialization on every such result.
+
+Evidence: `artifacts/qhy600/video-m<mode>-<bits>-01/{sdk,usb}.jsonl` and
+`video-summary.json`. SDK calls and USB commands/timings are recorded; live image
+payloads are hashed in memory rather than written into the trace. Reproduce one
+case with the existing Frida-enabled probe environment:
+
+```powershell
+artifacts/qhy600/venv/Scripts/python.exe scripts/inspection/qhy_sdk_probe.py --live --mode 0 --bits 16 --frames 10 --seconds 0.1 --output artifacts/qhy600/NEW-VIDEO-RUN
+```
+
+These are **SDK reference tests**, not Regain frontend video acceptance. QHY
+video and these additional read modes remain unexposed in NINA, ASCOM, Alpaca,
+and the direct USB worker.
+
+### Review: image memory pressure
+
+Review found infallible full-image allocation in both backends, plus redundant
+full-frame copies during direct unpacking and worker ROI packing. The SDK asks
+for 253,053,600 bytes even though a delivered RAW16 frame is 123,302,400 bytes.
+Its allocation failure was observed during the earlier installed-NINA test
+while a full Rust build was competing for memory; the worker aborted instead of
+returning a diagnostic error.
+
+QHY frame buffers now use fallible reservation, direct capture reserves its
+bounded frame/preamble window before draining USB, and unpacking/cropping reuse
+the original allocation. Full-frame delivery avoids another image allocation.
+Tests verify every pixel of a full-sensor overlapping crop, allocation reuse,
+invalid geometry, and a rejected allocation request. This reduces peak memory
+and makes these allocation failures reportable; it does not promise recovery
+from arbitrary out-of-memory failures inside the vendor SDK or frontend.
+
+After the review fix, all 1,135 Rust workspace tests passed with two build jobs;
+targeted clippy passed with warnings denied. The rebuilt production supervisor
+then captured four full 9600 × 6422 RAW16 five-second frames per backend,
+including a fresh frame after cancel/restart, with zero replacement exposures,
+download retries or fallback. This also verified returning from SDK video to
+ordinary still capture through a fresh connection. Evidence is in
+`review-workspace-tests.log`, `review-clippy.log`, `review-build.log`, and
+`review-stills-{direct,sdk}-01` under `artifacts/qhy600/`. Builds and physical
+capture were run sequentially.
+
 Ignored evidence under `artifacts/qhy600/`:
 
 - `sdk-reference-wire`: three full five-second frames and exact wire comparison.
