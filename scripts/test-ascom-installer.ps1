@@ -14,12 +14,13 @@ function Assert-NoCameraEntries {
         $root = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine, $view)
         try {
             for ($slot = 1; $slot -le 4; $slot++) {
-                foreach ($path in "Software\Classes\CLSID\{D1DB6F94-5CC0-4752-A758-F849098874A$slot}","Software\ASCOM\Camera Drivers\ASCOM.ZWOgain.Camera$slot") {
+                foreach ($path in "Software\Classes\CLSID\{D1DB6F94-5CC0-4752-A758-F849098874A$slot}","Software\ASCOM\Camera Drivers\ASCOM.ZWOgain.Camera$slot", "Software\Classes\CLSID\{C99D52F5-97D8-4A80-9943-26554DC8451$slot}", "Software\Classes\ASCOM.Regain.QhyFilterWheel$slot", "Software\ASCOM\FilterWheel Drivers\ASCOM.Regain.QhyFilterWheel$slot") {
                     $key = $root.OpenSubKey($path)
                     if ($key) { $key.Dispose(); throw "Camera entry exists in $view : $path" }
                 }
             }
-            foreach ($path in 'Software\Classes\CLSID\{A918164B-49DD-4FF5-BEE6-A4AB93B97F12}',
+            foreach ($path in 'Software\Classes\CLSID\{C99D52F5-97D8-4A80-9943-26554DC84520}', 'Software\Classes\ASCOM.Regain.QhyUsbFilterWheel', 'Software\ASCOM\FilterWheel Drivers\ASCOM.Regain.QhyUsbFilterWheel',
+                'Software\Classes\CLSID\{A918164B-49DD-4FF5-BEE6-A4AB93B97F12}',
                 'Software\Classes\ASCOM.ZWOgain.Rotator','Software\ASCOM\Rotator Drivers\ASCOM.ZWOgain.Rotator',
                 'Software\Classes\CLSID\{EA2040E1-E936-4BDF-87F7-B58CA3E418AB}', 'Software\Classes\CLSID\{295C08F8-EDE9-43C5-9D55-627A063D74CA}',
                 'Software\Classes\ASCOM.ZWOgain.FilterWheel','Software\ASCOM\FilterWheel Drivers\ASCOM.ZWOgain.FilterWheel',
@@ -94,6 +95,8 @@ function Assert-HubMetadata {
     $states = Get-Content -LiteralPath (Join-Path $testDir 'Hub fixture/fixture.json') -Raw | ConvertFrom-Json
     foreach ($state in $states) {
         foreach ($architecture in 'System32','SysWOW64') {
+        & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-qhy-ascom-metadata.ps1')
+        if ($LASTEXITCODE) { throw 'Installed QHY wheel COM activation failed' }
             & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-hub-export-client.ps1') -Directory (Split-Path -Parent $state.bindings) -Role installer -MetadataOnly
             if ($LASTEXITCODE) { throw "Installed hub metadata activation failed: $architecture / $($state.install)" }
         }
@@ -116,6 +119,8 @@ function Run-Uninstall([string]$Label, [bool]$Success = $true) {
 function Assert-FocusCubeActivation {
     # Inno emits its own registry entries, independently of Register.exe.
     foreach ($architecture in 'System32','SysWOW64') {
+        & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-qhy-ascom-metadata.ps1')
+        if ($LASTEXITCODE) { throw 'Installed QHY wheel COM activation failed' }
         & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-fc3-ascom-client.ps1') -MetadataOnly
         if ($LASTEXITCODE) { throw 'Installed FocusCube3 COM activation failed' }
         & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-falcon-ascom-client.ps1') -MetadataOnly
@@ -133,6 +138,8 @@ function Assert-FocusCubeActivation {
 function Assert-Ofp2Activation {
     # Inno emits its own registry entries, independently of Register.exe.
     foreach ($architecture in 'System32','SysWOW64') {
+        & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-qhy-ascom-metadata.ps1')
+        if ($LASTEXITCODE) { throw 'Installed QHY wheel COM activation failed' }
         & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-ofp2-ascom-client.ps1') -MetadataOnly
         if ($LASTEXITCODE) { throw 'Installed OFP2 COM activation failed' }
     }
@@ -148,6 +155,8 @@ function Assert-Ofp2Activation {
 function Assert-EtaActivation {
     # Inno emits its own registry entries, independently of Register.exe.
     foreach ($architecture in 'System32','SysWOW64') {
+        & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-qhy-ascom-metadata.ps1')
+        if ($LASTEXITCODE) { throw 'Installed QHY wheel COM activation failed' }
         & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-eta-ascom-client.ps1') -MetadataOnly
         if ($LASTEXITCODE) { throw 'Installed ETA COM activation failed' }
     }
@@ -309,6 +318,8 @@ try {
     python (Join-Path $PSScriptRoot 'test-native-camera.py') --bin-dir $destination --prepare $testDir
     if ($LASTEXITCODE) { throw 'Installed native profile preparation failed' }
     foreach ($architecture in 'System32','SysWOW64') {
+        & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-qhy-ascom-metadata.ps1')
+        if ($LASTEXITCODE) { throw 'Installed QHY wheel COM activation failed' }
         foreach ($deviceClass in 'EfwFilterWheel','EafFocuser') {
             & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-accessory-ascom-client.ps1') -DeviceClass $deviceClass
             if ($LASTEXITCODE) { throw 'Installed accessory COM test failed' }
@@ -344,6 +355,8 @@ try {
     Run-Setup 'downgrade' $false
     Set-ItemProperty $uninstallKey -Name DisplayVersion -Value $version
     foreach ($architecture in 'System32','SysWOW64') {
+        & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-qhy-ascom-metadata.ps1')
+        if ($LASTEXITCODE) { throw 'Installed QHY wheel COM activation failed' }
         foreach ($deviceClass in 'EfwFilterWheel','EafFocuser') {
             & "$env:WINDIR/$architecture/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test-accessory-ascom-client.ps1') -DeviceClass $deviceClass
             if ($LASTEXITCODE) { throw 'Installed accessory COM test failed' }

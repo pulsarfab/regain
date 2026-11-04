@@ -13,6 +13,7 @@ use uuid::Uuid;
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct Profile {
+    pub filter_wheel: CameraFilterWheel,
     pub unique_id: String,
     pub label: String,
     pub camera: Option<Value>,
@@ -25,6 +26,7 @@ pub struct Profile {
 impl Default for Profile {
     fn default() -> Self {
         Self {
+            filter_wheel: CameraFilterWheel::default(),
             unique_id: Uuid::new_v4().to_string(),
             label: "PulsarFab regain Retryable Camera".into(),
             camera: None,
@@ -47,6 +49,25 @@ impl Profile {
     }
 
     pub fn validate(&self) -> Result<()> {
+        ensure!(
+            self.filter_wheel.names.len() <= 16
+                && self.filter_wheel.focus_offsets.len() <= 16
+                && self
+                    .filter_wheel
+                    .names
+                    .iter()
+                    .all(|n| !n.trim().is_empty() && n.len() <= 100),
+            "Invalid camera filter wheel labels"
+        );
+        ensure!(
+            !self.filter_wheel.enabled
+                || self
+                    .camera
+                    .as_ref()
+                    .and_then(|c| c["name"].as_str())
+                    .is_some_and(|n| n.starts_with("QHY")),
+            "The 4-pin wheel requires a QHY camera selection"
+        );
         self.recovery.validate()?;
         ensure!(
             !self.label.trim().is_empty()
@@ -96,6 +117,7 @@ impl Profile {
                                 | "ZWO ASI2600MM Pro"
                                 | "ZWO ASI220MM Mini"
                                 | "ZWO ASI6200MM Pro"
+                                | "QHY600M"
                         )
                     ),
                     "Camera is not supported by the direct driver"
@@ -110,6 +132,13 @@ impl Profile {
         );
         Ok(())
     }
+}
+#[derive(Clone, Default, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase", deny_unknown_fields)]
+pub struct CameraFilterWheel {
+    pub enabled: bool,
+    pub names: Vec<String>,
+    pub focus_offsets: Vec<i32>,
 }
 pub struct Profiles {
     pub focusers: crate::focuser::Slots,

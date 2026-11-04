@@ -86,9 +86,18 @@ internal static class CameraSetupWindow
         var device = Tab("Device", "Choose a local camera. Settings save automatically. Transfer logging and the direct cooler power limit can change while connected; other settings require disconnecting.");
         var picker = new ComboBox { MinHeight = 30, Margin = new Thickness(0, 0, 0, 12), DisplayMemberPath = "Label" }; editors.Add(picker); device.Children.Add(picker); AutomationProperties.SetName(picker, "Camera");
         if (profile["camera"] is JsonNode saved) { picker.Items.Add(new Choice(saved.DeepClone())); picker.SelectedIndex = 0; }
-        var backend = new ComboBox { ItemsSource = new[] { "ZWO SDK", "Direct USB" }, SelectedIndex = profile["direct"]!.GetValue<bool>() ? 1 : 0, MinHeight = 30, Margin = new Thickness(0, 0, 0, 12) };
+        var backend = new ComboBox { ItemsSource = new[] { "Vendor SDK", "Direct USB" }, SelectedIndex = profile["direct"]!.GetValue<bool>() ? 1 : 0, MinHeight = 30, Margin = new Thickness(0, 0, 0, 12) };
         AutomationProperties.SetName(backend, "Camera backend"); device.Children.Add(new TextBlock { Text = "Camera backend" }); device.Children.Add(backend); editors.Add(backend);
         var fallback = new CheckBox { Content = "Allow SDK fallback for direct USB", IsChecked = profile["sdkFallback"]!.GetValue<bool>(), Margin = new Thickness(0, 0, 0, 12) }; device.Children.Add(fallback); editors.Add(fallback);
+        profile["filterWheel"] ??= new JsonObject { ["enabled"] = false, ["names"] = new JsonArray(), ["focusOffsets"] = new JsonArray() };
+        var wheel = new CheckBox { Content = "QHY 4-pin filter wheel shares this camera", IsChecked = profile["filterWheel"]!["enabled"]!.GetValue<bool>(), Margin = new Thickness(0,0,0,12) };
+        device.Children.Add(wheel); editors.Add(wheel);
+        readers.Add(() => profile["filterWheel"]!["enabled"] = wheel.IsChecked == true);
+        wheel.Click += (_,_) => TrySave();
+        Field(device, "Filter names (separate with |)", string.Join(" | ",profile["filterWheel"]!["names"]!.AsArray().Select(n=>n!.GetValue<string>())), text =>
+            profile["filterWheel"]!["names"] = JsonSerializer.SerializeToNode(text.Length == 0 ? Array.Empty<string>() : text.Split('|').Select(n=>n.Trim()).ToArray()));
+        Field(device, "Focus offsets (comma-separated)", string.Join(", ",profile["filterWheel"]!["focusOffsets"]!.AsArray().Select(n=>n!.GetValue<int>())), text =>
+            profile["filterWheel"]!["focusOffsets"] = JsonSerializer.SerializeToNode(text.Length == 0 ? Array.Empty<int>() : text.Split(',').Select(n=>int.Parse(n.Trim(),CultureInfo.InvariantCulture)).ToArray()));
         var serial = Field(device, "Camera serial (optional)", profile["serial"]?.GetValue<string>() ?? "", v => profile["serial"] = v.Length == 0 ? null : JsonValue.Create(v));
         readers.Add(() => { profile["camera"] = (picker.SelectedItem as Choice)?.Camera.DeepClone(); profile["direct"] = backend.SelectedIndex == 1; profile["sdkFallback"] = backend.SelectedIndex == 1 && fallback.IsChecked == true; });
         picker.SelectionChanged += (_, _) => { if (loading || busy) return; serial.Text = ""; TrySave(); };

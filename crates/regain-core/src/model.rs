@@ -86,9 +86,21 @@ pub struct Selection {
     pub sdk_fallback: bool,
     pub recovery: RecoveryOptions,
 }
+impl Selection {
+    /// Canonical model identities are supplied by discovery, never user labels.
+    /// Keeps existing profiles compatible while routing QHY to its own worker.
+    pub fn vendor(&self) -> &'static str {
+        if self.name.starts_with("QHY") {
+            "qhy"
+        } else {
+            "zwo"
+        }
+    }
+}
 #[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Status {
+    pub filter_wheel: Value,
     pub info: Value,
     pub serial: Option<String>,
     pub sdk_version: String,

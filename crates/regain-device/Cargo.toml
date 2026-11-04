@@ -16,6 +16,7 @@ categories = ["science", "hardware-support", "command-line-utilities"]
 anyhow = "1"
 regain-transport.workspace = true
 regain-zwo.workspace = true
+regain-qhy.workspace = true
 regain-pegasus.workspace = true
 regain-deepskydad.workspace = true
 regain-wanderer.workspace = true

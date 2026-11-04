@@ -71,8 +71,13 @@ impl Accessory {
             }),
         }
     }
+    fn wheel(&self) -> bool {
+        matches!(self.kind, "efw" | "cfw")
+    }
     fn name(&self) -> &'static str {
-        if self.kind == "efw" {
+        if self.kind == "cfw" {
+            "PulsarFab regain QHY Filter Wheel (USB)"
+        } else if self.kind == "efw" {
             "PulsarFab regain EFW Filter Wheel"
         } else if self.kind == "eta" {
             "PulsarFab regain Wanderer Astro ETA M54"
@@ -110,20 +115,26 @@ impl Accessory {
             error(0x401, "Use a nonempty focuser name up to 100 characters")
         );
         ensure!(
-            p.serial.as_ref().is_none_or(|s| if self.kind == "eta" {
-                !s.is_empty()
-                    && s.len() <= 128
-                    && s.bytes()
-                        .all(|b| b.is_ascii_alphanumeric() || b"/_-.".contains(&b))
-            } else if self.kind == "fc3" {
-                s.len() == 17
-                    && s.split(':').count() == 6
-                    && s.split(':')
-                        .all(|v| v.len() == 2 && v.bytes().all(|b| b.is_ascii_hexdigit()))
-            } else {
-                s.len() == 16 && s.bytes().all(|b| b.is_ascii_hexdigit())
-            }),
+            p.serial
+                .as_ref()
+                .is_none_or(|s| if matches!(self.kind, "eta" | "cfw") {
+                    !s.is_empty()
+                        && s.len() <= 128
+                        && s.bytes()
+                            .all(|b| b.is_ascii_alphanumeric() || b"/_-.".contains(&b))
+                } else if self.kind == "fc3" {
+                    s.len() == 17
+                        && s.split(':').count() == 6
+                        && s.split(':')
+                            .all(|v| v.len() == 2 && v.bytes().all(|b| b.is_ascii_hexdigit()))
+                } else {
+                    s.len() == 16 && s.bytes().all(|b| b.is_ascii_hexdigit())
+                }),
             error(0x401, "Select a device by serial")
+        );
+        ensure!(
+            self.kind != "cfw" || !p.unidirectional,
+            error(0x401, "CFW USB direction control is unsupported")
         );
         ensure!(
             p.names.len() <= 16
@@ -156,6 +167,7 @@ impl Accessory {
             match self.kind {
                 "fc3" => "pegasus",
                 "eta" => "wanderer",
+                "cfw" => "qhy",
                 _ => "zwo",
             },
             self.kind,
@@ -217,7 +229,7 @@ impl Accessory {
     pub async fn configured(&self) -> Result<Option<Value>> {
         let mut s = self.state.lock().await;
         self.load(&mut s)?;
-        Ok(s.profile.serial.as_ref().map(|_|json!({"DeviceName":s.profile.label.as_deref().unwrap_or(self.name()),"DeviceType":if self.kind=="efw"{"FilterWheel"}else{"Focuser"},"DeviceNumber":self.number,"UniqueID":s.profile.unique_id})))
+        Ok(s.profile.serial.as_ref().map(|_|json!({"DeviceName":s.profile.label.as_deref().unwrap_or(self.name()),"DeviceType":if self.wheel(){"FilterWheel"}else{"Focuser"},"DeviceNumber":self.number,"UniqueID":s.profile.unique_id})))
     }
     async fn connect(&self, s: &mut State, client: u32, on: bool) -> Result<()> {
         if !on {
@@ -250,7 +262,7 @@ impl Accessory {
                 "USB identity changed"
             );
             let status = worker.request(json!({"command":"status"})).await?;
-            if self.kind == "efw" {
+            if self.wheel() {
                 let count = status["slots"]
                     .as_u64()
                     .ok_or_else(|| error(0x500, "Invalid slot count"))?
@@ -282,7 +294,7 @@ impl Accessory {
             s.clients.clear();
         }
         let client = p.optional_id("ClientID")?;
-        if member == "connected" || (self.kind != "efw" && member == "link") {
+        if member == "connected" || (!self.wheel() && member == "link") {
             if put {
                 self.connect(
                     &mut s,
@@ -305,7 +317,7 @@ impl Accessory {
                 }
                 "driverinfo" => return Ok(json!("PulsarFab regain SDK-free native USB driver")),
                 "driverversion" => return Ok(json!(env!("CARGO_PKG_VERSION"))),
-                "interfaceversion" => return Ok(json!(if self.kind == "efw" { 2 } else { 3 })),
+                "interfaceversion" => return Ok(json!(if self.wheel() { 2 } else { 3 })),
                 "supportedactions" => {
                     return Ok(if self.kind == "eta" {
                         json!([
@@ -372,14 +384,14 @@ impl Accessory {
                     .to_string()
             ));
         }
-        if !put && self.kind == "efw" {
+        if !put && self.wheel() {
             match member {
                 "names" => return Ok(json!(s.profile.names)),
                 "focusoffsets" => return Ok(json!(s.profile.focus_offsets)),
                 _ => (),
             }
         }
-        if !put && self.kind != "efw" {
+        if !put && !self.wheel() {
             match member {
                 "absolute" => return Ok(json!(true)),
                 "tempcomp" | "tempcompavailable" => return Ok(json!(false)),
@@ -400,14 +412,14 @@ impl Accessory {
                 error(0x500, format!("Accessory fault: {status}"))
             );
             return match member {
-                "position" => Ok(if self.kind == "efw" && status["moving"] == true {
+                "position" => Ok(if self.wheel() && status["moving"] == true {
                     json!(-1)
                 } else {
                     status["position"].clone()
                 }),
-                "ismoving" if self.kind != "efw" => Ok(status["moving"].clone()),
-                "maxstep" | "maxincrement" if self.kind != "efw" => Ok(status["max_step"].clone()),
-                "temperature" if self.kind != "efw" => {
+                "ismoving" if !self.wheel() => Ok(status["moving"].clone()),
+                "maxstep" | "maxincrement" if !self.wheel() => Ok(status["max_step"].clone()),
+                "temperature" if !self.wheel() => {
                     if status["temperature_c"].is_null() {
                         Err(unsupported(member))
                     } else {
@@ -417,8 +429,7 @@ impl Accessory {
                 _ => Err(unsupported(member)),
             };
         }
-        if (member == "position" && self.kind == "efw") || (member == "move" && self.kind != "efw")
-        {
+        if (member == "position" && self.wheel()) || (member == "move" && !self.wheel()) {
             let position = p.integer("Position")?;
             let status = s
                 .worker
@@ -426,7 +437,7 @@ impl Accessory {
                 .unwrap()
                 .request(json!({"command":"status"}))
                 .await?;
-            let maximum = if self.kind == "efw" {
+            let maximum = if self.wheel() {
                 status["slots"].as_i64().unwrap_or(0) - 1
             } else {
                 status["max_step"].as_i64().unwrap_or(-1)
@@ -448,7 +459,7 @@ impl Accessory {
         if member == "halt" && self.kind == "eta" {
             return Err(unsupported("ETA has no documented stop command"));
         }
-        if member == "halt" && self.kind != "efw" {
+        if member == "halt" && !self.wheel() {
             s.worker
                 .as_mut()
                 .unwrap()
@@ -461,7 +472,7 @@ impl Accessory {
     pub async fn settings(&self, value: Value) -> Result<Value> {
         let mut s = self.state.lock().await;
         ensure!(
-            self.kind != "efw",
+            !self.wheel(),
             error(0x400, "EFW settings belong to its profile")
         );
         ensure!(

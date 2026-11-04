@@ -78,6 +78,14 @@ internal static class Program
                     if (remove) root.DeleteSubKeyTree(key, false);
                     else { using var chooser = root.CreateSubKey(key); chooser.SetValue(null, "PulsarFab regain Retryable Camera " + slot); }
                 }
+                for (int slot = 1; slot <= 4; slot++) {
+                    string key = @"Software\ASCOM\FilterWheel Drivers\ASCOM.Regain.QhyFilterWheel" + slot;
+                    if (remove) root.DeleteSubKeyTree(key, false);
+                    else { using var chooser = root.CreateSubKey(key); chooser.SetValue(null, "PulsarFab regain QHY Filter Wheel (Camera " + slot + ")"); }
+                }
+                string qhyUsbKey = @"Software\ASCOM\FilterWheel Drivers\ASCOM.Regain.QhyUsbFilterWheel";
+                if (remove) root.DeleteSubKeyTree(qhyUsbKey, false);
+                else { using var chooser = root.CreateSubKey(qhyUsbKey); chooser.SetValue(null, "PulsarFab regain QHY Filter Wheel (USB)"); }
                 string rotatorKey = @"Software\ASCOM\Rotator Drivers\ASCOM.ZWOgain.Rotator";
                 if (remove) root.DeleteSubKeyTree(rotatorKey, false);
                 else { using var chooser = root.CreateSubKey(rotatorKey); chooser.SetValue(null, "PulsarFab regain CAA Rotator"); }

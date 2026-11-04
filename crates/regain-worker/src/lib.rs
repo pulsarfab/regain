@@ -1,6 +1,7 @@
 //! Shared, bounded newline-JSON IPC for accessory workers.
 //! Camera workers retain their separate length-prefixed JSON and binary frame protocol.
 use anyhow::Result;
+pub mod camera;
 use serde_json::{Value, json};
 use std::{
     io::{self, BufRead, Write},

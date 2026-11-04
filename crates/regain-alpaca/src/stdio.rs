@@ -55,6 +55,38 @@ impl Supervisor {
         let mut pixels: Arc<[u8]> = Arc::from([]);
         let token = CancellationToken::new();
         let value = match method {
+            "wheel-status" | "wheel-move" => {
+                let busy = self.capture.lock().unwrap().busy;
+                if busy && method == "wheel-status" {
+                    let state = self
+                        .status
+                        .as_ref()
+                        .ok_or_else(|| invalid("Camera not open"))?
+                        .lock()
+                        .unwrap();
+                    ensure!(
+                        state.control_connection_available && !state.filter_wheel.is_null(),
+                        invalid("Wheel position unavailable during camera recovery")
+                    );
+                    state.filter_wheel.clone()
+                } else {
+                    ensure!(
+                        !busy,
+                        invalid("Cannot move the filter wheel during an exposure")
+                    );
+                    let mut engine = self.engine.lock().await;
+                    let session = engine.as_mut().ok_or_else(|| invalid("Camera not open"))?;
+                    if method == "wheel-status" {
+                        session.filter_wheel_status(&token).await?
+                    } else {
+                        let position = p["position"]
+                            .as_u64()
+                            .and_then(|n| u8::try_from(n).ok())
+                            .ok_or_else(|| invalid("Invalid wheel position"))?;
+                        session.filter_wheel_move(position, &token).await?
+                    }
+                }
+            }
             "usb-peripherals-ready" => {
                 let acknowledgement: regain_core::usb_peripherals::Acknowledgement =
                     serde_json::from_value(p)?;
@@ -134,6 +166,9 @@ impl Supervisor {
                     },
                 };
                 let mut session = Session::new(selection, self.runtime.clone(), self.log.clone())?;
+                if !p["wheelExpected"].is_null() {
+                    session.seed_filter_wheel(p["wheelExpected"].clone())?;
+                }
                 ensure!(
                     p["waitForUsbPeripherals"].is_null() || p["waitForUsbPeripherals"].is_boolean(),
                     invalid("Invalid waitForUsbPeripherals option")

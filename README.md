@@ -73,6 +73,13 @@ can retry a download while the SDK still reports an image ready, reconnect and
 restore camera and cooler settings, or restart a stuck SDK worker. Taking a
 replacement exposure is a separate, configurable option.
 
+**QHY600M** also has direct USB and vendor SDK backends on Windows. It supports
+mode 0, full-resolution RAW16, gain, offset and cooling through the same NINA,
+ASCOM and Alpaca frontends. QHY downloads are consumptive: recovery takes an
+explicit replacement exposure instead of rereading the old frame.
+[QHY600 setup and current scope](docs/qhy600.md). Its [4-pin filter wheel](docs/qhycfw3.md) shares the camera connection in NINA, native ASCOM, and Alpaca. The standalone
+USB wheel entry works without a camera connection or vendor SDK.
+
 <a id="how-retries-work"></a>
 
 By default, regain allows **two download retries** and **three replacement
@@ -223,8 +230,8 @@ ASCOM clients; other frontends need exclusive access to the device. See [connect
 
 ### Camera modes
 
-**Direct USB** uses regain's Rust drivers without the ZWO SDK. **ZWO SDK** is the
-default mode and supports a broader range of cameras. Both work in NINA, native
+**Direct USB** uses regain's Rust drivers without the vendor SDK. **Vendor SDK** is the
+default mode and supports a broader range of ZWO cameras. Both work in NINA, native
 ASCOM, and Alpaca.
 
 | Camera | SDK-free capture | Reread the same image after a failed download | SDK mode |
@@ -235,6 +242,7 @@ ASCOM, and Alpaca.
 | **[ZWO ASI662MC](docs/asi662mc.md)** | Yes, experimental; RAW16 bin 1 | Yes; short captures use a ~100 ms frame interval | Yes |
 | **[ZWO ASI585MM Pro](docs/asi585mm-pro.md)** | Yes, experimental; RAW16 bins 1–4 and cooling | Yes; short captures use a ~100 ms frame interval | Yes |
 | **ZWO ASI220MM Mini / Duo guide sensor** | Yes, experimental | No direct reread support | Yes |
+| **[QHY600M](docs/qhy600.md)** | Windows, experimental; validated U3G20 revision, mode 0 RAW16 bin 1 and cooling | No; failed reads require an explicit replacement exposure | Yes, with the installed QHY SDK; same initial mode scope |
 | **Other ZWO ASI cameras** | No | Depends on the SDK keeping the image available | If supported by the bundled SDK |
 
 SDK download retries depend on the SDK's ready-frame state; they do not use
@@ -248,7 +256,7 @@ Direct cameras accept USB 2 high-speed and USB 3 connections where supported
 by their hardware. USB 2 validation varies by model; ASI585MM Pro has been
 tested on Windows USB 3 only. See [USB 2 support and validation](docs/usb2-cameras.md).
 
-### Accessories: all SDK-free
+### Accessories
 
 <a id="caa-rotator"></a>
 <a id="efw-filter-wheel-and-eaf-focuser"></a>
@@ -258,6 +266,7 @@ tested on Windows USB 3 only. See [USB 2 support and validation](docs/usb2-camer
 | Hardware | Connection | Controls |
 | --- | --- | --- |
 | **ZWO CAA** | USB HID | Rotation, sync, reverse, limits |
+| **[QHYCFW3 XL, 9 positions](docs/qhycfw3.md)** | QHY600M 4-pin bridge (Direct USB or SDK); standalone USB serial | Filter selection, position verification, names and offsets |
 | **ZWO EFW** | USB HID | Filter selection, names, offsets, direction, calibration |
 | **ZWO EAF** | USB HID | Focus, halt, reverse, backlash, travel limit, temperature |
 | **Pegasus Astro FocusCube3** | USB serial | Focus, halt, temperature, reverse, backlash, speed |

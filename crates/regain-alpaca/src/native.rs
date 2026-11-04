@@ -61,6 +61,7 @@ pub async fn run(runtime: Runtime, profiles: Arc<Profiles>, log: Arc<Log>) -> Re
             ensure!(request["version"] == 1, "Unsupported pipe protocol");
             let mut pixels: Arc<[u8]> = Arc::from([]);
             let response: Result<Value> = async {
+                let client = request["clientID"].as_u64().and_then(|n| u32::try_from(n).ok()).unwrap_or(1);
                 let member = request["member"].as_str().unwrap_or("");
                 let p = &request["params"];
                 match request["method"].as_str().unwrap_or("") {
@@ -74,11 +75,16 @@ pub async fn run(runtime: Runtime, profiles: Arc<Profiles>, log: Arc<Log>) -> Re
                         ensure!(!device.in_use(), Error(0x40B, "Disconnect before scanning USB".into()));
                         runtime.list(p["direct"] == true, log.diagnostic(None), &CancellationToken::new()).await
                     }
+                    "wheel-get" | "wheel-put" => {
+                        let mut values = BTreeMap::new();
+                        if let Some(map) = p.as_object() { for (k,v) in map { values.insert(k.to_lowercase(), v.as_str().map(str::to_owned).unwrap_or_else(|| v.to_string())); }}
+                        device.wheel_request(member, request["method"] == "wheel-put", &Params(values), client).await
+                    }
                     "get" if matches!(member, "imagearray" | "imagearrayvariant") => {
-                        let frame = device.image(1)?; pixels = frame.pixels.clone();
+                        let frame = device.image(client)?; pixels = frame.pixels.clone();
                         Ok(json!({"width":frame.exposure.width,"height":frame.exposure.height}))
                     }
-                    "get" => device.get(member, 1),
+                    "get" => device.get(member, client),
                     "put" => {
                         let mut values = BTreeMap::new();
                         if let Some(map) = p.as_object() { for (k,v) in map { values.insert(k.to_lowercase(), v.as_str().map(str::to_owned).unwrap_or_else(|| v.to_string())); }}
@@ -95,9 +101,9 @@ pub async fn run(runtime: Runtime, profiles: Arc<Profiles>, log: Arc<Log>) -> Re
                                     profile.camera = Some(choices[0].clone()); device.configure(profile)?;
                                 }
                             }
-                            device.connected(1, on, member != "connected").await?; Ok(Value::Null)
-                        } else if member == "abortexposure" { device.abort(1).await?; Ok(Value::Null) }
-                        else { device.put(member, &params, 1) }
+                            device.connected(client, on, member != "connected").await?; Ok(Value::Null)
+                        } else if member == "abortexposure" { device.abort(client).await?; Ok(Value::Null) }
+                        else { device.put(member, &params, client) }
                     }
                     _ => anyhow::bail!("Unknown pipe operation"),
                 }

@@ -1151,6 +1151,7 @@ dependencies = [
  "anyhow",
  "regain-deepskydad",
  "regain-pegasus",
+ "regain-qhy",
  "regain-transport",
  "regain-wanderer",
  "regain-zwo",
@@ -1195,6 +1196,19 @@ name = "regain-pegasus"
 version = "0.6.1"
 dependencies = [
  "anyhow",
+ "regain-transport",
+ "regain-worker",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "regain-qhy"
+version = "0.6.1"
+dependencies = [
+ "anyhow",
+ "libloading",
+ "regain-core",
  "regain-transport",
  "regain-worker",
  "serde",

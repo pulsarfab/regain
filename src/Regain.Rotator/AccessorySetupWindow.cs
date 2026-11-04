@@ -49,16 +49,16 @@ public sealed class AccessorySetupWindow : Window
         checkStyle.Setters.Add(new Setter(FrameworkElement.MarginProperty, new Thickness(0, 4, 0, 8)));
         Resources[typeof(CheckBox)] = checkStyle;
         var root = new DockPanel { Margin = new Thickness(24) }; Content = root;
-        var heading = new TextBlock { Text = session.Kind == "efw" ? "Electronic Filter Wheel" : session.Kind == "eta" ? "Wanderer Astro ETA M54" : session.Kind == "fc3" ? "Pegasus Astro FocusCube3" : "Electronic Automatic Focuser", FontSize = 25, Margin = new Thickness(0, 0, 0, 8) };
+        var heading = new TextBlock { Text = session.Kind == "cfw" ? "QHY CFW3 USB Filter Wheel" : session.IsFilterWheel ? "Electronic Filter Wheel" : session.Kind == "eta" ? "Wanderer Astro ETA M54" : session.Kind == "fc3" ? "Pegasus Astro FocusCube3" : "Electronic Automatic Focuser", FontSize = 25, Margin = new Thickness(0, 0, 0, 8) };
         DockPanel.SetDock(heading, Dock.Top); root.Children.Add(heading);
-        var subheading = new TextBlock { Text = (session.Kind is "fc3" or "eta" ? "PulsarFab regain  •  Native USB serial" : "PulsarFab regain  •  Native USB HID") + (Regain.Rotator.RegainPaths.EnvironmentVariable("REGAIN_ACCESSORY_SIMULATE") == "1" ? "  •  Simulation" : ""), Margin = new Thickness(0, 0, 0, 20) };
+        var subheading = new TextBlock { Text = (session.Kind is "fc3" or "eta" or "cfw" ? "PulsarFab regain  •  Native USB serial" : "PulsarFab regain  •  Native USB HID") + (Regain.Rotator.RegainPaths.EnvironmentVariable("REGAIN_ACCESSORY_SIMULATE") == "1" ? "  •  Simulation" : ""), Margin = new Thickness(0, 0, 0, 20) };
         DockPanel.SetDock(subheading, Dock.Top); root.Children.Add(subheading);
         var footer = new StackPanel(); DockPanel.SetDock(footer, Dock.Bottom); root.Children.Add(footer);
         footer.Children.Add(message);
         footer.Children.Add(Button("Close", () => Close()));
         var tabs = new TabControl(); root.Children.Add(tabs);
         var device = Page(tabs, "Device");
-        device.Children.Add(Label(session.Kind == "eta" ? "Choose the ETA serial port" : "Choose a USB device")); device.Children.Add(devices);
+        device.Children.Add(Label(session.Kind is "eta" or "cfw" ? "Choose the device serial port" : "Choose a USB device")); device.Children.Add(devices);
         device.Children.Add(Row(Button("Refresh", Discover), Button("Connect", () => {
             if (!session.Connected && devices.SelectedItem is CaaChoice choice) session.Select(choice.Serial);
             session.Connect(); initialized = false; RefreshStatus();
@@ -68,12 +68,13 @@ public sealed class AccessorySetupWindow : Window
             devices.SelectedIndex = 0; devices.IsEnabled = false;
         }
         device.Children.Add(summary);
+        if (session.Kind == "cfw") device.Children.Add(new TextBlock { Text = "Use USB control mode (red startup flash) with the camera control cable removed. Select the wheel port explicitly; the generic USB serial does not identify a particular wheel.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 8) });
         device.Children.Add(new TextBlock { Text = "A device can be owned by one USB controller at a time. Close its vendor driver or Alpaca connection before connecting here.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 20, 0, 8) });
         device.Children.Add(new TextBlock { Text = "Settings: " + session.ProfilePath, TextWrapping = TextWrapping.Wrap, FontSize = 12 });
         var motion = Page(tabs, "Motion");
-        motion.Children.Add(Label(session.Kind == "eta" ? "Back focus (µm, mean of three points; preserves tilt)" : session.Kind == "efw" ? "Filter slot (1-based display)" : "Absolute position (steps)"));
+        motion.Children.Add(Label(session.Kind == "eta" ? "Back focus (µm, mean of three points; preserves tilt)" : session.IsFilterWheel ? "Filter slot (1-based display)" : "Absolute position (steps)"));
         motion.Children.Add(target);
-        moveButton = Button("Move", () => { session.Move(Parse(target) - (session.Kind == "efw" ? 1 : 0)); RefreshStatus(); });
+        moveButton = Button("Move", () => { session.Move(Parse(target) - (session.IsFilterWheel ? 1 : 0)); RefreshStatus(); });
         moveButton.IsEnabled = false; motion.Children.Add(moveButton);
         motion.Children.Add(motionStatus);
         if (session.Kind == "eta") {
@@ -88,7 +89,7 @@ public sealed class AccessorySetupWindow : Window
                 tilt.Children.Add(Label("Point " + point + " (µm)"));
                 tilt.Children.Add(Row(value, Button("Move point " + point, () => { session.EtaMovePoint(System.Text.Json.JsonSerializer.Serialize(new { point, position = Parse(value) })); RefreshStatus(); })));
             }
-        } else if (session.Kind != "efw") {
+        } else if (!session.IsFilterWheel) {
             motion.Children.Add(Button("Halt", session.Halt));
             motion.Children.Add(new TextBlock { Text = "Check mechanical clearance before moving. The driver travel limit is enforced before a move. Focus step size in microns depends on the attached focuser.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 20, 0, 0) });
             var settings = Page(tabs, "Settings"); if (session.Kind == "eaf") settings.Children.Add(beep); settings.Children.Add(reverse);
@@ -98,20 +99,22 @@ public sealed class AccessorySetupWindow : Window
             settings.Children.Add(Button("Apply settings", () => { if (session.Kind == "fc3") session.Request(new { command = "settings", speed = Parse(speed), backlash = Parse(backlash), reverse = reverse.IsChecked == true }); else session.Request(new { command = "settings", beep = beep.IsChecked == true, reverse = reverse.IsChecked == true, backlash = Parse(backlash), max_step = Parse(limit) }); initialized = false; RefreshStatus(); }));
             settings.Children.Add(new TextBlock { Text = "Set hardware backlash to zero if NINA handles backlash compensation. Temperature compensation is controlled by the imaging application.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 20, 0, 0) });
         } else {
-            motion.Children.Add(Label("Wheel calibration"));
-            motion.Children.Add(new TextBlock { Text = "Rotate the wheel to detect all filter slots. Takes about 50 seconds and finishes at slot 1. Wait for completion before disconnecting; the wheel has no halt command.", TextWrapping = TextWrapping.Wrap });
-            calibrateButton = Button("Calibrate wheel", () => { session.Calibrate(); RefreshStatus(); });
-            calibrateButton.IsEnabled = false; motion.Children.Add(calibrateButton);
+            if (session.Kind == "efw") {
+                motion.Children.Add(Label("Wheel calibration"));
+                motion.Children.Add(new TextBlock { Text = "Rotate the wheel to detect all filter slots. Takes about 50 seconds and finishes at slot 1. Wait for completion before disconnecting; the wheel has no halt command.", TextWrapping = TextWrapping.Wrap });
+                calibrateButton = Button("Calibrate wheel", () => { session.Calibrate(); RefreshStatus(); });
+                calibrateButton.IsEnabled = false; motion.Children.Add(calibrateButton);
+            }
             var settings = Page(tabs, "Filters"); settings.Children.Add(filters);
             var direction = new CheckBox { Content = "Move in one direction", IsChecked = session.Profile.Unidirectional, Margin = new Thickness(0, 12, 0, 8) };
-            settings.Children.Add(direction);
+            if (session.Kind == "efw") settings.Children.Add(direction);
             settings.Children.Add(Button("Save filter settings", () => {
                 if (session.Status().Moving) throw new InvalidOperationException("Wait for the wheel to stop");
                 var names = filterRows.Select(r => r.Name.Text.Trim()).ToArray();
                 var offsets = filterRows.Select(r => Parse(r.Offset)).ToArray();
                 if (names.Any(string.IsNullOrEmpty) || !offsets.Contains(0)) throw new ArgumentException("Name each filter and keep at least one focus offset at zero");
                 session.Profile.Names = names; session.Profile.FocusOffsets = offsets;
-                session.Profile.Unidirectional = direction.IsChecked == true; session.Save();
+                session.Profile.Unidirectional = session.Kind == "efw" && direction.IsChecked == true; session.Save();
             }));
         }
         Loaded += (_, _) => { if (session.Connected) Run(RefreshStatus); else Run(Discover); timer.Start(); };
@@ -122,14 +125,14 @@ public sealed class AccessorySetupWindow : Window
     private void RefreshStatus()
     {
         var s = session.Status();
-        summary.Text = session.Kind == "efw" ? $"{s.Slots} slots  •  {(s.Moving ? "Moving" : "Slot " + (s.Position + 1))}" : $"Position {s.Position:N0} / {s.MaxStep:N0} steps  •  {(s.Moving ? "Moving" : "Idle")}\nTemperature: {(s.Temperature.HasValue ? s.Temperature.Value.ToString("F1") + " °C" : "Unavailable")}";
+        summary.Text = session.IsFilterWheel ? $"{s.Slots} slots  •  {(s.Moving ? "Moving" : "Slot " + (s.Position + 1))}" : $"Position {s.Position:N0} / {s.MaxStep:N0} steps  •  {(s.Moving ? "Moving" : "Idle")}\nTemperature: {(s.Temperature.HasValue ? s.Temperature.Value.ToString("F1") + " °C" : "Unavailable")}";
         if (s.Calibrating) summary.Text = $"Calibrating… {s.DetectedSlots ?? 0} slots detected. Waiting for the wheel to finish.";
         if (session.Kind == "eta") summary.Text = $"Back focus {s.Position} µm  •  {(s.Moving ? "Moving" : "Idle")}\n" + string.Join("   •   ", s.PointsUm.Select((p, i) => $"Point {i + 1}: {p:F1} µm"));
         motionStatus.Text = summary.Text;
         moveButton.IsEnabled = !s.Moving;
         if (calibrateButton is not null) calibrateButton.IsEnabled = !s.Moving;
         if (!initialized) {
-            target.Text = (s.Position + (session.Kind == "efw" ? 1 : 0)).ToString(CultureInfo.InvariantCulture);
+            target.Text = (s.Position + (session.IsFilterWheel ? 1 : 0)).ToString(CultureInfo.InvariantCulture);
             speed.Text = s.Speed.ToString(); beep.IsChecked = s.Beep; reverse.IsChecked = s.Reverse; backlash.Text = s.Backlash.ToString(); limit.Text = s.MaxStep.ToString();
             filters.Children.Clear(); filterRows.Clear();
             if (s.Slots > 0) filters.Children.Add(Row(new TextBlock { Width = 65 }, new TextBlock { Text = "Filter name", Width = 268, Margin = new Thickness(0, 0, 0, 8) }, new TextBlock { Text = "Focus offset", Width = 110 }));

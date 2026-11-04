@@ -46,7 +46,7 @@ fn run() -> Result<()> {
     }
     if vendor.is_empty() || vendor == "--help" || vendor == "help" {
         println!(
-            "PulsarFab regain device worker\nUsage: regain-device VENDOR DEVICE [arguments]\n\nZWO:        zwo camera-direct | camera-sdk | caa | efw | eaf\nPegasus:    pegasus fc3 | falcon\nDeepSkyDad: deepskydad ofp2\nWanderer:   wanderer eta\n\nAccessory commands: list-details | status | serve [--serial ID] [--simulate]\nUSB recovery: usb reset|cycle TARGET (see docs/usb-recovery.md)\nCamera commands: --help"
+            "PulsarFab regain device worker\nUsage: regain-device VENDOR DEVICE [arguments]\n\nZWO:        zwo camera-direct | camera-sdk | caa | efw | eaf\nQHY:        qhy camera-direct | camera-sdk | cfw\nPegasus:    pegasus fc3 | falcon\nDeepSkyDad: deepskydad ofp2\nWanderer:   wanderer eta\n\nAccessory commands: list-details | status | serve [--serial ID] [--simulate]\nUSB recovery: usb reset|cycle TARGET (see docs/usb-recovery.md)\nCamera commands: --help"
         );
         return Ok(());
     }
@@ -58,6 +58,10 @@ fn dispatch(vendor: &str, device: &str, args: Vec<String>) -> Result<()> {
     match (vendor, device) {
         ("zwo", "camera-direct") => regain_zwo::asi::direct::run(args),
         ("zwo", "camera-sdk") => regain_zwo::asi::sdk::run(args),
+        ("qhy", "camera-sdk") => regain_qhy::sdk::run(args),
+        ("qhy", "cfw") => regain_qhy::cfw_usb::run(args),
+        #[cfg(windows)]
+        ("qhy", "camera-direct") => regain_qhy::direct::run(args),
         ("zwo", "caa") => regain_zwo::caa::worker::run(args),
         ("zwo", "efw" | "eaf") => regain_zwo::accessories::worker::run(
             std::iter::once(device.to_owned()).chain(args).collect(),

@@ -43,13 +43,14 @@ public sealed class AccessorySession : IDisposable, IDeviceSession
     public bool ConnectionRequested { get; private set; }
     public string OpticalConnectionEpoch { get { lock (gate) { recovery.RequireVerified(); return recovery.ConnectionEpoch; } } }
     public string Kind { get; }
+    public bool IsFilterWheel => Kind is "efw" or "cfw";
     public string ProfilePath { get; }
     public AccessoryProfile Profile { get; private set; }
     private bool WorkerConnected => worker is { HasExited: false };
     public bool Connected { get { lock (gate) return ConnectionRequested && !recovery.IsBlocked && (WorkerConnected || recovery.CanRecover); } }
     public AccessorySession(string executable, string kind, string profilePath)
     {
-        if (kind is not ("efw" or "eaf" or "fc3" or "ofp2" or "eta")) throw new ArgumentException("Unknown accessory");
+        if (kind is not ("efw" or "cfw" or "eaf" or "fc3" or "ofp2" or "eta")) throw new ArgumentException("Unknown accessory");
         this.executable = executable; Kind = kind; ProfilePath = profilePath; Profile = ReadProfile();
     }
     public static string SettingsPath(string kind, string frontend) => RegainPaths.EnvironmentVariable("REGAIN_ACCESSORY_SETTINGS") is string directory
@@ -70,7 +71,7 @@ public sealed class AccessorySession : IDisposable, IDeviceSession
     private Process Start(string arguments)
     {
         if (Regain.Rotator.RegainPaths.EnvironmentVariable("REGAIN_ACCESSORY_SIMULATE") == "1") arguments += " --simulate";
-        var process = new Process { StartInfo = new(executable, (Kind == "fc3" ? "pegasus fc3 " : Kind == "ofp2" ? "deepskydad ofp2 " : Kind == "eta" ? "wanderer eta " : "zwo " + Kind + " ") + arguments) {
+        var process = new Process { StartInfo = new(executable, (Kind == "cfw" ? "qhy cfw " : Kind == "fc3" ? "pegasus fc3 " : Kind == "ofp2" ? "deepskydad ofp2 " : Kind == "eta" ? "wanderer eta " : "zwo " + Kind + " ") + arguments) {
             UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden,
             RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
             WorkingDirectory = Path.GetDirectoryName(executable)!, StandardOutputEncoding = new System.Text.UTF8Encoding(false) } };
@@ -115,8 +116,8 @@ public sealed class AccessorySession : IDisposable, IDeviceSession
     }
     private void ValidateSerial(string serial)
     {
-        if (Kind == "eta") {
-            if (!System.Text.RegularExpressions.Regex.IsMatch(serial, @"\A(?:COM[1-9][0-9]*|SIMULATION)\z")) throw new ArgumentException("Select the ETA serial port");
+        if (Kind is "eta" or "cfw") {
+            if (!System.Text.RegularExpressions.Regex.IsMatch(serial, @"\A(?:COM[1-9][0-9]*|SIMULATION)\z")) throw new ArgumentException("Select the device serial port");
             return;
         }
         if (Kind == "ofp2") {
@@ -137,6 +138,7 @@ public sealed class AccessorySession : IDisposable, IDeviceSession
             if (!recovering) { Profile = ReadProfile(); recovery.Reset(); }
             else if (ReadProfile().Serial != Profile.Serial) throw new IOException("Device selection changed during recovery");
             if (Profile.Serial.Length == 0) {
+                if (Kind == "cfw") throw new InvalidOperationException("Select the QHY wheel's serial port in setup before connecting; its USB bridge has no unique serial number");
                 var choices = Discover();
                 if (choices.Count != 1) throw new InvalidOperationException("Choose an available device in setup; found " + choices.Count);
                 Select(choices[0].Serial);
@@ -149,7 +151,7 @@ public sealed class AccessorySession : IDisposable, IDeviceSession
                 var identity = Request(new { command = "identity" });
                 if (!string.Equals(identity.GetProperty("serial").GetString(), Profile.Serial, StringComparison.OrdinalIgnoreCase)) throw new IOException("USB device identity changed");
                 var status = ReadStatus();
-                if (Kind == "efw" && !recovering) {
+                if (IsFilterWheel && !recovering) {
                     if (Profile.Names.Length != status.Slots || Profile.FocusOffsets.Length != status.Slots) {
                         Profile.Names = Enumerable.Range(1, status.Slots).Select(i => "Filter " + i).ToArray();
                         Profile.FocusOffsets = new int[status.Slots]; Save();
@@ -177,7 +179,7 @@ public sealed class AccessorySession : IDisposable, IDeviceSession
             JsonDocument document;
             var command = JsonSerializer.SerializeToElement(request);
             string name = command.GetProperty("command").GetString()!;
-            bool write = Kind == "efw" && !opening && name is not ("identity" or "status");
+            bool write = IsFilterWheel && !opening && name is not ("identity" or "status");
             if (write) recovery.Writing();
             try {
                 input!.WriteLine(JsonSerializer.Serialize(request));
@@ -199,7 +201,7 @@ public sealed class AccessorySession : IDisposable, IDeviceSession
     public AccessoryStatus Status()
     {
         lock (gate) {
-            var s = Kind != "efw" || opening ? ReadStatus() : recovery.Read(ReadStatus, () => Open(true), CloseWorker,
+            var s = !IsFilterWheel || opening ? ReadStatus() : recovery.Read(ReadStatus, () => Open(true), CloseWorker,
                 value => !value.Moving && !value.Calibrating && value.Error == 0 && value.Fault is null && value.Position >= 0 && value.Position < value.Slots,
                 (before, after) => before.Position == after.Position && before.Slots == after.Slots, Log);
             if (s.Error != 0 || s.Fault is not null) throw new IOException(s.Fault ?? "Device error " + s.Error);
@@ -215,7 +217,7 @@ public sealed class AccessorySession : IDisposable, IDeviceSession
     public void Move(int position)
     {
         var s = Status();
-        if (position < 0 || position > (Kind == "efw" ? s.Slots - 1 : s.MaxStep)) throw new ArgumentOutOfRangeException(nameof(position));
+        if (position < 0 || position > (IsFilterWheel ? s.Slots - 1 : s.MaxStep)) throw new ArgumentOutOfRangeException(nameof(position));
         Request(new { command = "move", position, unidirectional = Profile.Unidirectional });
     }
     public void Halt() => Request(new { command = "halt" });

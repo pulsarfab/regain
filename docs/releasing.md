@@ -156,8 +156,8 @@ Run the signing smoke test after changes to the repository name or owner.
 
 ## crates.io publication
 
-All ten workspace crates are published to crates.io under the same Rust
-version: `regain-worker`, `regain-transport`, `regain-core`, `regain-zwo`,
+Publish all eleven workspace crates to crates.io under the same Rust
+version: `regain-worker`, `regain-transport`, `regain-core`, `regain-zwo`, `regain-qhy`,
 `regain-pegasus`, `regain-deepskydad`, `regain-wanderer`, `regain-device`,
 `regain-hub` and `regain-alpaca`. Each crate has its own `README.md` and `LICENSE`, and inherits
 `version`, `edition`, `rust-version`, `authors`, `repository` and `homepage`

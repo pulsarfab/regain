@@ -13,3 +13,8 @@ pub use session::Session;
 pub use tokio_util::sync::CancellationToken;
 pub use worker::{Runtime, Worker};
 pub mod camera_options;
+
+pub mod thermal;
+
+pub mod diagnostics;
+mod flight_recorder;

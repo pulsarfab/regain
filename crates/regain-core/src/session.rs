@@ -44,6 +44,7 @@ enum OpenPurpose {
 /// One owner per camera. All public entry points are serialized by the frontend.
 /// Status and queued controls remain readable while capture owns the worker.
 pub struct Session {
+    wheel_expected: Option<Value>,
     pub status: SharedStatus,
     pub selection: Selection,
     runtime: Runtime,
@@ -94,6 +95,7 @@ impl Session {
             log(level, event, message);
         });
         Ok(Self {
+            wheel_expected: None,
             usb_peripherals: usb_peripherals::PeripheralRecoveryHandle::new(status.clone()),
             runtime_options: camera_options::CameraRuntimeHandle::new(&selection.recovery),
             applied_runtime_options: None,
@@ -121,6 +123,95 @@ impl Session {
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             (self.log)(level, event, message.as_ref())
         }));
+    }
+    /// Camera-connected wheel operations are serialized by the same owner as
+    /// exposure. Expected optical state survives worker replacement/fallback.
+    /// Preserve the optical expectation across a supervisor restart. A fresh
+    /// readback must match it before any subsequent exposure can start.
+    pub fn seed_filter_wheel(&mut self, expected: Value) -> Result<()> {
+        let slots = expected["slots"]
+            .as_u64()
+            .filter(|n| (2..=16).contains(n))
+            .ok_or_else(|| invalid("Invalid wheel slot count"))?;
+        let position = expected["position"]
+            .as_u64()
+            .filter(|n| *n < slots)
+            .ok_or_else(|| invalid("Invalid expected wheel position"))?;
+        ensure!(
+            self.selection.vendor() == "qhy",
+            invalid("Camera does not support a shared filter wheel")
+        );
+        self.wheel_expected = Some(json!({"slots":slots,"position":position}));
+        Ok(())
+    }
+    pub async fn filter_wheel_status(&mut self, token: &CancellationToken) -> Result<Value> {
+        ensure!(
+            self.selection.vendor() == "qhy",
+            invalid("Camera has no supported attached wheel")
+        );
+        self.status.lock().unwrap().filter_wheel =
+            json!({"position":-1,"moving":true,"verified":false});
+        if self.worker.is_none() {
+            self.open(token).await?;
+        }
+        let (mut state, _) = self.call("wheel-status", Value::Null, None, token).await?;
+        let slots = state["slots"]
+            .as_u64()
+            .filter(|v| (2..=16).contains(v))
+            .ok_or_else(|| invalid("Invalid wheel geometry"))?;
+        let position = state["position"]
+            .as_i64()
+            .filter(|v| *v >= -1 && *v < slots as i64)
+            .ok_or_else(|| invalid("Invalid wheel position"))?;
+        ensure!(
+            state["parentSerial"]
+                == self
+                    .selection
+                    .serial
+                    .as_deref()
+                    .map(Value::from)
+                    .unwrap_or(Value::Null),
+            invalid("Wheel parent identity changed")
+        );
+        if let Some(expected) = &self.wheel_expected {
+            ensure!(
+                expected["slots"] == slots,
+                invalid("Wheel geometry changed during recovery")
+            );
+        } else {
+            ensure!(
+                position >= 0 && state["moving"] == false,
+                invalid("Wheel must be stationary before connecting")
+            );
+            self.wheel_expected = Some(json!({"slots":slots,"position":position}));
+        }
+        let expected = self.wheel_expected.as_ref().unwrap();
+        state["expectedPosition"] = expected["position"].clone();
+        state["verified"] =
+            json!(state["moving"] == false && state["position"] == expected["position"]);
+        self.status.lock().unwrap().filter_wheel = state.clone();
+        Ok(state)
+    }
+    pub async fn filter_wheel_move(
+        &mut self,
+        position: u8,
+        token: &CancellationToken,
+    ) -> Result<Value> {
+        let state = self.filter_wheel_status(token).await?;
+        ensure!(
+            u64::from(position) < state["slots"].as_u64().unwrap(),
+            invalid("Filter position outside carousel")
+        );
+        ensure!(
+            state["moving"] == false,
+            invalid("Wheel is moving or position is unknown")
+        );
+        self.wheel_expected = Some(json!({"slots":state["slots"],"position":position}));
+        self.status.lock().unwrap().filter_wheel = json!({"slots":state["slots"],"position":-1,"moving":true,"verified":false,"expectedPosition":position});
+        // Never retry a move, including after a lost acknowledgement.
+        self.call("wheel-move", json!({"position":position}), None, token)
+            .await?;
+        Ok(self.snapshot().filter_wheel)
     }
     fn phase(&self, phase: impl Into<String>) {
         let phase = phase.into();
@@ -553,6 +644,10 @@ impl Session {
             self.settle_required = true;
         }
         self.status.lock().unwrap().control_connection_available = false;
+        if self.wheel_expected.is_some() {
+            self.status.lock().unwrap().filter_wheel =
+                json!({"position":-1,"moving":true,"verified":false});
+        }
         if let Some(mut worker) = self.worker.take() {
             worker.kill().await;
         }
@@ -628,6 +723,12 @@ impl Session {
         result
     }
     async fn bind_usb(&mut self, token: &CancellationToken) -> Result<()> {
+        ensure!(
+            self.selection.vendor() == "zwo",
+            invalid(
+                "Privileged USB reset is not yet validated for QHY; disable camera USB reset in setup"
+            )
+        );
         if token.is_cancelled() {
             return Err(Failure::Cancelled.into());
         }
@@ -786,6 +887,7 @@ impl Session {
             self.runtime
                 .spawn_configured(
                     self.direct,
+                    self.selection.vendor(),
                     self.log.clone(),
                     Some(&self.selection.recovery),
                 )
@@ -976,7 +1078,7 @@ impl Session {
                 .observations
                 .insert(kind, observation);
         }
-        if self.direct
+        if (self.direct || self.snapshot().info["hostRegulatedCooling"] == true)
             && self.settle_required
             && !self.cooling_seeded
             && values.get(&17).is_some_and(|v| *v != 0)
@@ -1342,6 +1444,9 @@ impl Session {
         let started = Utc::now();
         let seconds = e.microseconds as f64 / 1e6;
         let mut params = serde_json::to_value(e)?;
+        if let Some(expected) = &self.wheel_expected {
+            params["wheelExpected"] = expected.clone();
+        }
         if self.direct {
             params["readRetries"] = json!(if self.retained()
                 || seconds <= options.maximum_retry_exposure_seconds
@@ -1611,6 +1716,23 @@ impl Session {
             self.delay(o.cooling_sample_seconds, token).await?;
         }
         anyhow::bail!("Camera did not recover its prior cooling temperature and output")
+    }
+    pub async fn disable_thermal_outputs(&mut self, token: &CancellationToken) -> Result<()> {
+        for kind in [17, 21] {
+            if self
+                .snapshot()
+                .controls
+                .get(&kind)
+                .is_some_and(|c| c.writable)
+            {
+                let receipt = self
+                    .cooling()
+                    .submit(kind, 0, std::time::Duration::from_secs(15))?;
+                self.service_cooling(token).await?;
+                receipt.wait().await?;
+            }
+        }
+        Ok(())
     }
     pub async fn close(&mut self) {
         self.usb_peripherals.retire();

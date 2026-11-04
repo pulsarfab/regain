@@ -373,3 +373,15 @@ Choose **PulsarFab regain Pegasus Falcon V2** in the Rotator Chooser
 executable with FocusCube3 and one Falcon serial worker between ASCOM clients.
 The styled setup dialog includes motion, sync, reverse, reference and explicit
 multi-turn controls. See [Falcon V2](falcon-v2.md) for setup and hardware evidence.
+
+### QHY camera-connected filter wheels
+
+The installer also registers `ASCOM.Regain.QhyFilterWheel1` through `4`
+(IFilterWheelV2), paired with the matching Regain camera slot. Camera and wheel
+share one local Rust owner within the client process, in Direct USB or SDK
+mode. Use [QHY wheel setup](qhycfw3.md) for the 4-pin connection, filter labels,
+Alpaca discovery, and connection-sharing limits.
+
+For a separately connected USB wheel, choose **PulsarFab regain QHY Filter Wheel
+(USB)** and select its COM port. This entry does not open a camera or load the
+QHY SDK. Paired camera entries above are for the 4-pin connection only.

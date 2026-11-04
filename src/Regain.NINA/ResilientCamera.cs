@@ -27,6 +27,8 @@ public sealed class ResilientCamera : BaseINPC, ICamera
     private int originalTimeout, extendedTimeout;
     private readonly object sync = new();
     private CameraSession? session;
+    private QhyCameraConnections.Lease? qhyLease;
+    private Action<CameraUsbRecoveryEvent>? recoveryEvents;
     private CancellationTokenSource? lifetime, exposureCancel;
     private Task<Frame>? exposure;
     private long exposureGeneration;
@@ -71,7 +73,7 @@ public sealed class ResilientCamera : BaseINPC, ICamera
     public string SerialNumber => session?.Serial ?? string.Empty;
     public string DisplayName => "PulsarFab regain Retryable Camera";
     public string Category => "PulsarFab regain";
-    public string Description => "ZWO camera driver with automatic retries";
+    public string Description => "Camera driver with automatic retries";
     public string DriverInfo => (session?.RecoveryInfo ?? new CameraRetryStatus().DriverInfo("Disconnected")) +
         (session is { } owner ? $" [{owner.Backend}{(owner.UsingSdkFallback ? " fallback" : "")}]" +
             (owner.ControlConnectionAvailable ? "" : " (telemetry held)") : "");
@@ -84,8 +86,8 @@ public sealed class ResilientCamera : BaseINPC, ICamera
     internal Task UpdateRuntimeOptionsAsync(RecoveryOptions options) => Session.UpdateRuntimeOptionsAsync(options);
     public void SetupDialog()
     {
-        Settings.Show(options => session?.UpdateRuntimeOptionsAsync(options) ?? Task.CompletedTask,
-            () => Connected,
+        Settings.Show(options => session?.UpdateRuntimeOptionsAsync(options) ?? QhyCameraConnections.UpdateOptionsAsync(options),
+            () => Connected || QhyCameraConnections.InUse,
             simulated: !useConfiguredBackend && hostFactory != (Func<HostClient>)CameraProvider.NewHost &&
                 hostFactory != (Func<HostClient>)CameraProvider.NewDirectHost);
         if (!Connected && selectionStore?.Load() is { } selected)
@@ -114,19 +116,23 @@ public sealed class ResilientCamera : BaseINPC, ICamera
             saveCameraSerialNumber = selected.SaveCameraSerialNumber;
         }
         bool direct = selected?.UseDirectDriver == true;
-        if (direct && descriptor.Name is not ("ZWO ASI585MM Pro" or "ZWO ASI676MC" or "ZWO ASI662MC" or "ZWO ASI2600MM Duo" or "ZWO ASI2600MM Pro" or "ZWO ASI220MM Mini" or "ZWO ASI6200MM Pro"))
+        if (direct && descriptor.Name is not ("ZWO ASI585MM Pro" or "ZWO ASI676MC" or "ZWO ASI662MC" or "ZWO ASI2600MM Duo" or "ZWO ASI2600MM Pro" or "ZWO ASI220MM Mini" or "ZWO ASI6200MM Pro" or "QHY600M"))
             throw new NotSupportedException("Direct capture is unavailable for this camera. Turn off Direct USB driver to use the SDK.");
         var factory = useConfiguredBackend && direct ? CameraProvider.NewDirectHost : hostFactory;
-        var candidate = new CameraSession(descriptor, factory, recoveryOptions ?? Settings.Load(), selected?.Serial, direct && selected?.AllowSdkFallback == true ? hostFactory : null);
+        var sharedLease = useConfiguredBackend && selected is not null && descriptor.Name.StartsWith("QHY", StringComparison.Ordinal)
+            ? await QhyCameraConnections.AcquireAsync(selected, camera: true, token).ConfigureAwait(false) : null;
+        var candidate = sharedLease?.Session ?? new CameraSession(descriptor, factory, recoveryOptions ?? Settings.Load(), selected?.Serial, direct && selected?.AllowSdkFallback == true ? hostFactory : null);
         var peripherals = peripheralRecoveryFactory?.Invoke();
+        Action<CameraUsbRecoveryEvent>? onRecovery = null;
         if (peripherals is { Enabled: true } coordinator) {
             candidate.RecoverUsbPeripherals = coordinator.WaitAsync;
-            candidate.UsbRecovery += change => {
+            onRecovery = change => {
                 if (change.Phase == CameraUsbRecoveryPhase.Resetting) coordinator.ResetStarting(change.RecoveryId, change.TimestampUnixUs);
                 else if (change.Phase == CameraUsbRecoveryPhase.CameraReturned) coordinator.CameraReturned(change.RecoveryId);
             };
+            candidate.UsbRecovery += onRecovery;
         } else { peripherals?.Dispose(); peripherals = null; }
-        candidate.Diagnostic += text => { CameraLog.Session(Name, text); RaisePropertyChanged(nameof(DriverInfo)); };
+        if (sharedLease is null) candidate.Diagnostic += text => { CameraLog.Session(Name, text); RaisePropertyChanged(nameof(DriverInfo)); };
         try
         {
             await candidate.ConnectAsync(token).ConfigureAwait(false);
@@ -138,6 +144,7 @@ public sealed class ResilientCamera : BaseINPC, ICamera
             }
             SelectCamera(candidate.Camera); // Backend capabilities may be narrower than saved SDK capabilities.
             // Match the native ASI driver's acquisition defaults. Preserve cooling state.
+            if (descriptor.Name.StartsWith("ZWO ASI", StringComparison.Ordinal))
             foreach (var (control, value) in new Dictionary<int, long> { { 2, 50 }, { 3, 50 }, { 4, 50 }, { 6, 40 }, { 7, 0 }, { 9, 0 }, { 13, 0 }, { 14, 0 }, { 18, 0 }, { 20, 0 } })
                 if (candidate.Controls.TryGetValue(control, out var cap) && cap.Writable && value >= cap.Min && value <= cap.Max)
                     candidate.Set(control, value);
@@ -145,6 +152,8 @@ public sealed class ResilientCamera : BaseINPC, ICamera
             if (selected is not null)
                 selectionStore!.RememberSerial(selected, candidate.Serial);
             session = candidate;
+            qhyLease = sharedLease;
+            recoveryEvents = onRecovery;
             peripheralRecovery = peripherals;
             lifetime = new();
             Connected = true;
@@ -152,7 +161,11 @@ public sealed class ResilientCamera : BaseINPC, ICamera
             RaiseAllPropertiesChanged();
             return true;
         }
-        catch { peripherals?.Dispose(); candidate.Dispose(); throw; }
+        catch {
+            peripherals?.Dispose(); if (onRecovery is not null) candidate.UsbRecovery -= onRecovery;
+            if (sharedLease is not null) { candidate.RecoverUsbPeripherals = (_,_) => Task.CompletedTask; sharedLease.Dispose(); }
+            else candidate.Dispose(); throw;
+        }
     }
     private async Task Poll(CameraSession owner, CancellationToken token)
     {
@@ -177,10 +190,11 @@ public sealed class ResilientCamera : BaseINPC, ICamera
             ++exposureGeneration;
             peripheralRecovery?.Dispose();
             peripheralRecovery = null;
-            session?.Dispose();
-            session = null;
-            Connected = false;
-            RestoreNinaTimeout();
+            if (session is not null && recoveryEvents is not null) session.UsbRecovery -= recoveryEvents;
+            recoveryEvents = null;
+            if (qhyLease is not null && session is not null) session.RecoverUsbPeripherals = (_,_) => Task.CompletedTask;
+            try { if (qhyLease is not null) qhyLease.Dispose(); else session?.Dispose(); }
+            finally { qhyLease = null; session = null; Connected = false; RestoreNinaTimeout(); }
         }
         RaiseAllPropertiesChanged();
     }
@@ -195,8 +209,9 @@ public sealed class ResilientCamera : BaseINPC, ICamera
     public double PixelSizeY => descriptor.PixelSize;
     // SDK RAW16 is left-aligned, as in the native NINA ASI driver.
     public int BitDepth => 16;
-    public double ExposureMin => Min(1) / 1e6;
-    public double ExposureMax => Max(1) / 1e6;
+    // Exposure ranges are microseconds and can exceed Int32 (QHY600: one hour).
+    public double ExposureMin => (session?.Controls.GetValueOrDefault(1)?.Min ?? 0) / 1e6;
+    public double ExposureMax => (session?.Controls.GetValueOrDefault(1)?.Max ?? 0) / 1e6;
     public short BinX
     {
         get => bin; set => SetBinning(value, value);

@@ -22,8 +22,13 @@ $devices = @(1..4 | ForEach-Object {
        Clsid = "{{D1DB6F94-5CC0-4752-A758-F849098874A$_}"; Type = 'Camera'; Name = "PulsarFab regain Retryable Camera $_" }
 }) + @(@{ Class = 'Regain.Ascom.CaaRotator'; ProgId = 'ASCOM.ZWOgain.Rotator';
     Clsid = '{{A918164B-49DD-4FF5-BEE6-A4AB93B97F12}'; Type = 'Rotator'; Name = 'PulsarFab regain CAA Rotator' },
+    @{ Class = 'Regain.Ascom.QhyUsbFilterWheel'; ProgId = 'ASCOM.Regain.QhyUsbFilterWheel'; Clsid = '{{C99D52F5-97D8-4A80-9943-26554DC84520}'; Type = 'FilterWheel'; Name = 'PulsarFab regain QHY Filter Wheel (USB)' },
     @{ Class = 'Regain.Ascom.EfwFilterWheel'; ProgId = 'ASCOM.ZWOgain.FilterWheel'; Clsid = '{{EA2040E1-E936-4BDF-87F7-B58CA3E418AB}'; Type = 'FilterWheel'; Name = 'PulsarFab regain EFW Filter Wheel' },
     @{ Class = 'Regain.Ascom.EafFocuser'; ProgId = 'ASCOM.ZWOgain.Focuser'; Clsid = '{{295C08F8-EDE9-43C5-9D55-627A063D74CA}'; Type = 'Focuser'; Name = 'PulsarFab regain EAF Focuser' })
+$devices += @(1..4 | ForEach-Object {
+    @{ Class = "Regain.Ascom.QhyFilterWheel$_"; ProgId = "ASCOM.Regain.QhyFilterWheel$_";
+       Clsid = "{{C99D52F5-97D8-4A80-9943-26554DC8451$_}"; Type = 'FilterWheel'; Name = "PulsarFab regain QHY Filter Wheel (Camera $_)" }
+})
 foreach ($root in 'HKLM32','HKLM64') {
     foreach ($device in $devices) {
         $class = $device.Class

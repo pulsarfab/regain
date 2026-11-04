@@ -68,16 +68,51 @@ public sealed class AcceptancePlugin : PluginBase
             object response;
             try {
                 switch (request.RootElement.GetProperty("command").GetString()) {
+                    case "connect-qhy":
+                        await wheel.Rescan(); await Select(wheel, request.RootElement.TryGetProperty("usbWheel",out var usbWheel) && usbWheel.GetBoolean() ? "Regain.CFW" : "Regain.QHY.CFW");
+                        await camera.Rescan(); await Select(camera, "ZwoGain");
+                        bool cameraFirst = request.RootElement.TryGetProperty("cameraFirst",out var order) && order.GetBoolean();
+                        if (cameraFirst && !await camera.Connect()) throw new Exception("Camera connect failed");
+                        if (!await wheel.Connect()) throw new Exception("QHY wheel connect failed");
+                        if (!cameraFirst && !await camera.Connect()) throw new Exception("Camera connect failed");
+                        response = new { id, ok = true, camera = camera.GetDevice().Name, wheel = wheel.GetDevice().Name, wheelInfo = wheel.GetDevice().DriverInfo,
+                            slots = ((IFilterWheel)wheel.GetDevice()).Names.Length, position = ((IFilterWheel)wheel.GetDevice()).Position }; break;
+                    case "move-wheel":
+                        int target = request.RootElement.GetProperty("position").GetInt32();
+                        await wheel.ChangeFilter(((IFilterWheel)wheel.GetDevice()).Filters[target],lifetime.Token,null);
+                        if (((IFilterWheel)wheel.GetDevice()).Position != target) throw new Exception("Wrong filter readback");
+                        response = new { id, ok = true, position = ((IFilterWheel)wheel.GetDevice()).Position }; break;
+                    case "wheel-state":
+                        response = new { id, ok = true, connected = wheel.GetDevice().Connected, position = ((IFilterWheel)wheel.GetDevice()).Position,
+                            diagnostics = wheel.GetDevice().Action(wheel.GetDevice().Id == "Regain.CFW" ? "Regain.Status" : "Regain.Diagnostics","") }; break;
+                    case "disconnect-camera":
+                        await camera.Disconnect(); response = new { id, ok = true, wheelConnected = wheel.GetDevice().Connected, wheelPosition = ((IFilterWheel)wheel.GetDevice()).Position }; break;
+                    case "connect-camera":
+                        if (!await camera.Connect()) throw new Exception("Camera connect failed"); response = new { id, ok = true }; break;
+                    case "connect-wheel":
+                        if (!await wheel.Connect()) throw new Exception("Wheel connect failed"); response = new { id, ok = true, position = ((IFilterWheel)wheel.GetDevice()).Position }; break;
+                    case "capture-reject-wheel":
+                        var pending = imaging.CaptureImage(new CaptureSequence { ExposureTime = 5, Binning = new BinningMode(1,1), Gain = 30, Offset = 30 },lifetime.Token,null,"Regain shared wheel guard acceptance");
+                        await Task.Delay(1200,lifetime.Token);
+                        string rejected;
+                        try { ((IFilterWheel)wheel.GetDevice()).Position = 1; throw new Exception("Wheel move was accepted during exposure"); }
+                        catch (InvalidOperationException error) { rejected = error.Message; }
+                        var protectedImage = await (await pending).ToImageData();
+                        var protectedPath = await protectedImage.SaveToDisk(new FileSaveInfo { FilePath = root, FilePattern = id, FileType = FileTypeEnum.FITS },lifetime.Token);
+                        response = new { id, ok = true, rejected, saved = protectedPath, width = protectedImage.Properties.Width, height = protectedImage.Properties.Height }; break;
                     case "connect":
-                        if (Environment.GetEnvironmentVariable("REGAIN_NINA_OPTICAL_ACCEPTANCE_NO_WHEEL") != "1") {
+                        bool cameraOnly = Environment.GetEnvironmentVariable("REGAIN_NINA_OPTICAL_ACCEPTANCE_CAMERA_ONLY") == "1";
+                        if (!cameraOnly && Environment.GetEnvironmentVariable("REGAIN_NINA_OPTICAL_ACCEPTANCE_NO_WHEEL") != "1") {
                             await wheel.Rescan(); await Select(wheel, "ZwoGain.EFW");
                             if (!await wheel.Connect()) throw new Exception("Wheel connect failed");
                         }
-                        await rotator.Rescan(); await Select(rotator, "ZwoGain.CAA");
-                        if (!await rotator.Connect()) throw new Exception("Rotator connect failed");
+                        if (!cameraOnly) {
+                            await rotator.Rescan(); await Select(rotator, "ZwoGain.CAA");
+                            if (!await rotator.Connect()) throw new Exception("Rotator connect failed");
+                        }
                         await camera.Rescan(); await Select(camera, "ZwoGain");
                         if (!await camera.Connect()) throw new Exception("Camera connect failed");
-                        response = new { id, ok = true, camera = camera.GetDevice().Name, wheel = wheel.GetDevice()?.Name, rotator = rotator.GetDevice().Name }; break;
+                        response = new { id, ok = true, camera = camera.GetDevice().Name, wheel = wheel.GetDevice()?.Name, rotator = rotator.GetDevice()?.Name }; break;
                     case "rotator-state":
                         var device = rotator.GetDevice() ?? throw new Exception("Rotator unavailable");
                         var state = device.GetType().GetMethod("ReadVerifiedOpticalState")?.Invoke(device, null)
