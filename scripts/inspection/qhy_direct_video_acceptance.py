@@ -12,6 +12,7 @@ import time
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--bits', type=int, choices=[8,16], default=16)
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
     root = Path(__file__).resolve().parents[2]
@@ -58,9 +59,10 @@ def main():
         if not reply['ok']:
             raise RuntimeError(f'{method}: {reply}')
         n = reply['binaryLength']
-        assert n in (0, 9600*6422*2), n
+        assert n in (0, 9600*6422, 9600*6422*2), n
         value = reply['result']
         if n:
+            assert value['bitDepth'] in (8,16) and n == 9600*6422*(value['bitDepth']//8), value
             data = exact(n)
             digest = hashlib.sha256(data).hexdigest()
             assert digest not in hashes, 'Duplicate frame'
@@ -69,9 +71,10 @@ def main():
             value['sha256'] = digest
         return value
 
-    def params(us=100_000, fps=4, gain=30, mode='video'):
+    def params(us=100_000, fps=4, gain=30, mode='video', bits=None):
         return dict(mode=mode,width=9600,height=6422,bin=1,x=0,y=0,
-                    microseconds=us,dark=False,maxFps=fps,gain=gain)
+                    microseconds=us,dark=False,maxFps=fps,gain=gain,
+                    bitDepth=(16 if mode=='still' else args.bits) if bits is None else bits)
 
     def capture(p, label):
         start = time.monotonic()
@@ -84,16 +87,18 @@ def main():
             time.sleep(.01)
         value = call('download')
         assert value['mode'] == p['mode'], value
+        assert value['bitDepth'] == p['bitDepth'], value
         record(dict(case=label,seconds=time.monotonic()-start,metadata=value))
         return value
 
-    def stream_frames(count, label, minimum_generation=1):
+    def stream_frames(count, label, minimum_generation=1, bits=None):
         received = 0
         start = time.monotonic()
         while received < count:
             value = call('stream-poll')
             if value.get('sha256'):
                 assert value['settingsSettled'] and value['settingsGeneration'] >= minimum_generation
+                assert value['bitDepth'] == (args.bits if bits is None else bits), value
                 record(dict(case=label,metadata=value))
                 received += 1
             else:
@@ -102,14 +107,15 @@ def main():
             assert time.monotonic()-start < 100, 'Stream deadline'
 
     try:
-        record(dict(case='configuration',workerSha256=hashlib.sha256((root/'target/release/regain-device.exe').read_bytes()).hexdigest(),
+        record(dict(case='configuration',bitDepth=args.bits,workerSha256=hashlib.sha256((root/'target/release/regain-device.exe').read_bytes()).hexdigest(),
                     source=subprocess.check_output(['git','rev-parse','HEAD'],cwd=root,text=True).strip(),
                     sourceDirty=bool(subprocess.check_output(['git','status','--porcelain'],cwd=root,text=True).strip())))
         opened = call('open',dict(name='QHY600M',serial='qhy600m-96763b4ab6a79e117'))
         assert opened['captureModes'] == ['still','video']
+        assert opened['videoBitDepths'] == [8,16]
         record(dict(case='open',capabilities=opened))
         # Unsupported settings must fail before any acquisition is dispatched.
-        for invalid in [dict(dark=True),dict(width=512),dict(microseconds=30_000_001),dict(readRetries=1),dict(maxFps=0)]:
+        for invalid in [dict(dark=True),dict(width=512),dict(microseconds=30_000_001),dict(readRetries=1),dict(maxFps=0),dict(bitDepth=12),dict(bitDepth='8'),dict(mode='still',bitDepth=8)]:
             call('validate', params() | invalid, reject=True)
         for i in range(10): capture(params(),f'repeated-{i}')
         prior = None
@@ -123,6 +129,8 @@ def main():
         paused = capture(params(), 'slow-consumer')
         assert paused['video']['discardedFrames'] > 0
         for i in range(3): capture(params(us=1_000_000,gain=60),f'changed-{i}')
+        for bits in (24-args.bits, args.bits):
+            for i in range(3): capture(params(bits=bits),f'format-{bits}-{i}')
         call('stop')
         call('start',params(us=5_000_000))
         time.sleep(.2)
@@ -153,6 +161,9 @@ def main():
         record(dict(case='blocked-output',before=before,after=after,metadata=blocked))
         call('stream-start',params(us=500_000,gain=40,fps=2))
         stream_frames(5,'stream-settings',minimum_generation=2)
+        for generation,bits in enumerate((24-args.bits,args.bits),start=3):
+            call('stream-start',params(us=500_000,gain=40,fps=2,bits=bits))
+            stream_frames(3,f'stream-format-{bits}',minimum_generation=generation,bits=bits)
         call('stream-stop')
         for i in range(3): capture(params(us=5_000_000,mode='still'),f'still-{i}')
         call('close')

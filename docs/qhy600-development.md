@@ -45,7 +45,7 @@ Passive instrumentation attaches only to our SDK probe, not NINA. `trace-qhy.js`
 | 40 D1 / A4 | Gain/read-mode fields; mode 0 boundaries traced |
 | 40 D1 / A5 | SDK USB traffic parameter, 0–60 |
 | 40 D1 / A6 | Exposure start |
-| 40 D1 / A7 | RAW16 selection |
+| 40 D1 / A7 | Pixel format: 00 RAW8, 01 RAW16 |
 | 40 D1 / A8 | Offset multiplied by 16, big-endian u16 |
 | 40 D1 / A9 ff | Observed initialization field; meaning not established |
 | B9 register 62 | Initialization handshake, about 1.4 s inside transfer |
@@ -69,7 +69,7 @@ The SDK can report `GetQHYCCDExposureRemaining <= 100` immediately after startin
 
 ## Capabilities and evidence
 
-Current worker: mode 0, bin 1, RAW16, software ROI from full-sensor still captures, gain, offset, USB traffic, temperature, cooler power and target. The direct worker also exposes [full-frame RAW16 video](qhy600-video.md). Other read modes have SDK reference captures but are not frontend capabilities. Hardware binning, dew heater, Linux direct USB and retained-frame rereads are not claimed.
+Current worker: mode 0, bin 1, RAW16, software ROI from full-sensor still captures, gain, offset, USB traffic, temperature, cooler power and target. The direct worker also exposes [full-frame RAW8/RAW16 video](qhy600-video.md). Other read modes have SDK reference captures but are not frontend capabilities. Hardware binning, dew heater, Linux direct USB and retained-frame rereads are not claimed.
 
 ### SDK video acceptance (2026-11-03)
 
@@ -119,7 +119,7 @@ artifacts/qhy600/venv/Scripts/python.exe scripts/inspection/qhy_sdk_probe.py --l
 
 These are **SDK reference tests**, not Regain frontend video acceptance.
 NINA, ASCOM and Alpaca retain single exposures. The direct worker exposes only
-photographic mode 0 RAW16 video; RAW8 and the additional read modes remain
+photographic mode 0 RAW8/RAW16 video; the additional read modes remain
 reference-tested extensions.
 
 ### Direct USB video acceptance (2026-11-03)
@@ -147,6 +147,44 @@ The final production-supervisor regression then passed four full five-second
 stills per backend, including cancel/restart, with zero replacement exposures,
 download retries or SDK fallback. Those results are in
 `direct-video-stills-{direct,sdk}-01/results.json`.
+
+### Native RAW8 extension (2026-11-03)
+
+`bitDepth: 8` selects the camera's native one-byte output with `D1 A7 00`.
+The default remains RAW16; still requests reject RAW8. Bit-depth changes restart
+and settle video, and the worker advertises `videoBitDepths: [8, 16]`.
+
+RAW8 wire images contain 9600 × 6456 bytes, followed by the shared eight-byte
+delimiter `ee 11 dd 22 ee 11 dd 22`. That delimiter is both the preceding
+frame's footer and the following frame's header; consuming it twice loses the
+next frame. The decoder retains it, removes 34 leading rows and delivers
+61,651,200 bytes unchanged. RAW16 retains its separate start/end markers and
+big-endian-to-little-endian conversion. Both parsers reject bad frame boundaries
+without searching past a full image for a later replacement.
+
+The SDK RAW8 trace yielded 20 distinct full-resolution images across two live
+start/stop cycles; every image hash matched the decoded USB payload. The same
+verifier matched all 20 prior RAW16 reference images. Evidence is in
+`video-wire-m0-{8,16}-01/wire-verification.json`; reproduce the comparison with
+`scripts/inspection/qhy_verify_video_wire.py <trace-directory>`.
+
+The complete QHY/core suites passed 122 tests, including full-sensor RAW8
+framing across transfer boundaries, shared-delimiter preservation and corrupt
+frame rejection. Targeted clippy with warnings denied and release builds passed.
+
+The expanded physical acceptance passed in both starting formats: 51 distinct
+full-resolution images per run, including repeated video, fractional FPS,
+paused/blocked consumers, gain/exposure changes, RAW8 ↔ RAW16 switching through
+both request and continuous-stream APIs, pending-read/pacing cancellation, and
+three five-second RAW16 stills after video. Each response's bit depth and byte
+count were verified; settings generations matched format changes. RAW8's steady
+request cadence was about 484 ms at 100 ms exposure on this setup, not a maximum
+frame-rate claim. Evidence is in `direct-video-raw8-01` and
+`direct-video-raw16-03` under `artifacts/qhy600/`.
+The production supervisor also passed four full five-second stills per backend
+with `bitDepth` omitted, including cancel/restart. All eight returned RAW16 with
+zero replacement exposures, download retries or SDK fallback; evidence is in
+`raw8-stills-{direct,sdk}-01/results.json`.
 
 ### Review: image memory pressure
 

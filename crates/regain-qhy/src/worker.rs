@@ -9,6 +9,15 @@ use std::{
     time::{Duration, Instant},
 };
 
+fn capture_bit_depth(params: &Value, video: bool) -> Result<u8> {
+    let bits = params.get("bitDepth").map_or(Some(16), Value::as_u64);
+    ensure!(
+        bits == Some(16) || (video && bits == Some(8)),
+        invalid("QHY bitDepth must be 16 for stills, or 8/16 for video")
+    );
+    Ok(bits.unwrap() as u8)
+}
+
 enum Backend {
     Sdk(Sdk),
     #[cfg(windows)]
@@ -137,7 +146,7 @@ struct Host {
     wheel_slots: Option<u8>,
     wheel_expected: Option<u8>,
     wheel_pending: Option<crate::cfw::Motion>,
-    video_params: Option<(Exposure, i64)>,
+    video_params: Option<(Exposure, i64, u8)>,
     video_interval: Duration,
     video_delivered: Option<Instant>,
     background_error: Option<String>,
@@ -414,6 +423,7 @@ impl Host {
             json!({"info":info(&self.serial),"serial":self.serial,"sdkVersion":version,
             "controls":self.controls.values().collect::<Vec<_>>(),"backend":if self.direct{"direct"}else{"sdk"},
             "captureModes":if self.direct {json!(["still","video"])} else {json!(["still"])},
+            "videoBitDepths":if self.direct {json!([8,16])} else {json!([])},
             "videoMaxExposureMicroseconds":if self.direct {json!(30_000_000)} else {Value::Null},
             "videoFrameRecoveryAttempts":0,"videoFpsScope":"delivery","videoGeometry":"full-frame","videoScalarUpdates":false}),
         )
@@ -573,6 +583,7 @@ impl Host {
                     invalid("Unknown QHY capture mode")
                 );
                 let video = mode == Some("video");
+                let bit_depth = capture_bit_depth(&p, video)?;
                 let fps = p
                     .get("maxFps")
                     .map_or(Some(1.), Value::as_f64)
@@ -602,7 +613,7 @@ impl Host {
                             && e.x == 0
                             && e.y == 0,
                         invalid(
-                            "QHY video requires full-frame RAW16 bin1, light mode, at most 30 seconds"
+                            "QHY video requires full-frame RAW8/RAW16 bin1, light mode, at most 30 seconds"
                         )
                     );
                     ensure!(
@@ -633,10 +644,9 @@ impl Host {
                     );
                     #[cfg(windows)]
                     if video {
-                        let reuse = self
-                            .video_params
-                            .as_ref()
-                            .is_some_and(|(old, g)| old == &e && *g == gain);
+                        let reuse = self.video_params.as_ref().is_some_and(|(old, g, bits)| {
+                            old == &e && *g == gain && *bits == bit_depth
+                        });
                         if !reuse {
                             self.stop()?;
                             // Arm cleanup before writes; a failed acknowledgement
@@ -647,14 +657,14 @@ impl Host {
                             else {
                                 unreachable!()
                             };
-                            c.start_video(u32::try_from(e.microseconds)?)?;
+                            c.start_video(u32::try_from(e.microseconds)?, bit_depth)?;
                             for (kind, value) in
                                 [(0, gain), (5, self.values[&5]), (6, self.values[&6])]
                             {
                                 self.backend.as_ref().unwrap().set(kind, value)?;
                             }
                             self.values.insert(0, gain);
-                            self.video_params = Some((e.clone(), gain));
+                            self.video_params = Some((e.clone(), gain, bit_depth));
                         }
                         self.video_interval = if p["continuousDrain"] == true {
                             Duration::ZERO
@@ -727,15 +737,22 @@ impl Host {
                 self.cancelled = true;
                 let full = self.backend.as_mut().unwrap().download()?;
                 self.verify_wheel()?;
-                pixels = crate::image::crop_raw16(
-                    full,
-                    9600,
-                    6422,
-                    e.x as usize,
-                    e.y as usize,
-                    e.width as usize,
-                    e.height as usize,
-                )?;
+                let bit_depth = self.video_params.as_ref().map_or(16, |(_, _, bits)| *bits);
+                pixels = if bit_depth == 8 {
+                    // RAW8 video is full-frame only; retain its original allocation.
+                    ensure!(full.len() == 9600 * 6422, "Invalid QHY RAW8 frame length");
+                    full
+                } else {
+                    crate::image::crop_raw16(
+                        full,
+                        9600,
+                        6422,
+                        e.x as usize,
+                        e.y as usize,
+                        e.width as usize,
+                        e.height as usize,
+                    )?
+                };
                 self.exposure = None;
                 self.cancelled = false;
                 let video = self.video_params.is_some();
@@ -751,7 +768,7 @@ impl Host {
                 #[cfg(not(windows))]
                 let video_status = Value::Null;
                 json!({"width":e.width,"height":e.height,"bytes":pixels.len(),"vendor":"qhy","hardwareReadMode":0,
-                    "mode":if video {"video"}else{"still"},"bitDepth":16,"video":video_status})
+                    "mode":if video {"video"}else{"still"},"bitDepth":bit_depth,"video":video_status})
             }
             "stop" => {
                 self.stop()?;
@@ -844,6 +861,30 @@ impl Drop for Host {
     fn drop(&mut self) {
         if let Err(e) = self.close() {
             crate::diagnostics::dump(&format!("Close: {e:#}"));
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn raw8_is_opt_in_video_only_and_invalid_depths_are_rejected() {
+        assert_eq!(capture_bit_depth(&json!({}), false).unwrap(), 16);
+        assert_eq!(capture_bit_depth(&json!({}), true).unwrap(), 16);
+        assert_eq!(capture_bit_depth(&json!({"bitDepth":8}), true).unwrap(), 8);
+        assert!(capture_bit_depth(&json!({"bitDepth":8}), false).is_err());
+        for bad in [
+            json!(null),
+            json!("8"),
+            json!(8.5),
+            json!(-8),
+            json!(0),
+            json!(12),
+            json!(256),
+        ] {
+            assert!(capture_bit_depth(&json!({"bitDepth":bad}), true).is_err());
         }
     }
 }
